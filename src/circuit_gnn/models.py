@@ -5,7 +5,7 @@ from typing import Optional, Callable, Dict, Any
 
 
 class SpikeEncoder(nn.Module):
-    def __init__(self, window_size, conv_out_channels=32, embedding_dim=16, kernel_size=3, padding=1):
+    def __init__(self, window_size, conv_out_channels=32, embedding_dim=64, kernel_size=3):
         # window_size: number of time steps in window
         # conv_out_channels: number of Conv1D output channels per neuron
         # embedding_dim: size of final embedding vector per neuron
@@ -60,24 +60,25 @@ class GNNLayer(nn.Module):
         )
         self.norm = nn.LayerNorm(out_dim)
         self.relu = nn.ReLU()
-        # self.dropout = nn.Dropout(p=0.2)
     
     def forward(self, x, A):
         # x: (batch, num_neurons, in_dim)
         messages = self.W_message(x) # message transformation
-        neighbor_agg = torch.matmul(A, messages) # apply learned connectivity: sum_j(A_ij * message_j)
         self_term = self.W_self(x)
+
+        neighbor_agg = torch.matmul(A, messages) # apply learned connectivity: sum_j(A_ij * message_j)
         out = self.relu(self.norm(neighbor_agg + self.self_scale * self_term)) # combine and activate
+        
         return out # (batch, num_neurons, out_dim)
     
 class GraphNeuralNetwork(nn.Module):
     def __init__(
         self,
         num_neurons,
-        embedding_dim,
-        hidden_dim,
-        output_dim,
-        num_layers=3,
+        embedding_dim=64,
+        hidden_dim=64,
+        output_dim=1,
+        num_layers=5,
         A_init=None,
         signed_init=False,
         desired_max=0.05,
@@ -85,10 +86,9 @@ class GraphNeuralNetwork(nn.Module):
     ):
         # embedding_dim: dimension of input embeedings per neuron (from SpikeEncoder)
         # hidden dim: dimension of hidden representation after message passing
-        # output_dim: dimension of output per neuron (1 for next-step firing prob)
+        # output_dim: dimension of output per neuron
 
         super(GraphNeuralNetwork, self).__init__()
-        init_plot_kwargs = init_plot_kwargs or {}
 
         if A_init is not None and not signed_init:
             print("Using unsigned adjacency initialization.")

@@ -12,17 +12,15 @@ import copy
 import numpy.matlib as matlib
 
 def overlay_zeros(ax, matrix):
-    """Paint exact-zero cells bright white on top of an existing imshow."""
+    # Paint exact-zero cells bright white on top of an existing imshow
     white_overlay = np.ma.masked_where(matrix != 0, matrix)
     ax.imshow(white_overlay, cmap=ListedColormap(["white"]),
             aspect="auto", vmin=-1, vmax=1, zorder=2)
 
 
 def make_saturated_rdbu(cut=0.15):
-    """
-    RdBu_r with the pale center [0.5-cut, 0.5+cut] removed.
-    Increase cut (e.g. 0.25) to start even closer to red/blue.
-    """
+    # RdBu_r with the pale center [0.5-cut, 0.5+cut] removed.
+
     rdbu = plt.cm.RdBu_r
     colors = np.vstack([
         rdbu(np.linspace(0,        0.5 - cut, 128)),   # blue side
@@ -31,7 +29,7 @@ def make_saturated_rdbu(cut=0.15):
     return LinearSegmentedColormap.from_list("RdBu_saturated", colors)
 
 
-def plot_connectivity_matrix(matrix, neuron_names, method_name='GNN', cmap=sns.diverging_palette(240, 10, as_cmap=True), save_dir='benchmarking_results'):
+def plot_connectivity_matrix(matrix, neuron_names, method_name='GNN', cmap=sns.diverging_palette(240, 10, as_cmap=True), save_dir='benchmarking_results', plot_val=True):
     os.makedirs(save_dir, exist_ok=True)
     vmin, vmax = matrix.min(), matrix.max()
     vmin = min(matrix.min(), -1e-6)
@@ -39,10 +37,57 @@ def plot_connectivity_matrix(matrix, neuron_names, method_name='GNN', cmap=sns.d
 
     norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
     plt.figure(figsize=(10, 8))
-    sns.heatmap(matrix, xticklabels=neuron_names, yticklabels=neuron_names, cmap=cmap, norm=norm, cbar_kws={'label': 'Connectivity Strength'}, square=True, annot=True, fmt=".3f")
+    if plot_val:
+        sns.heatmap(matrix, xticklabels=neuron_names, yticklabels=neuron_names, cmap=cmap, norm=norm, cbar_kws={'label': 'Connectivity Strength'}, square=True, annot=True, fmt=".3f")
+    else:
+        sns.heatmap(matrix, xticklabels=neuron_names, yticklabels=neuron_names, cmap=cmap, norm=norm, cbar_kws={'label': 'Connectivity Strength'}, square=True)
     plt.title(f"{method_name} Connectivity Matrix")
     plt.xlabel("Postsynaptic neuron")
     plt.ylabel("Presynaptic neuron")
+    plt.tight_layout()
+    save_path = os.path.join(save_dir, f"{method_name.replace(' ', '_').lower()}.pdf")
+    plt.savefig(save_path, format='pdf')
+    plt.close()
+
+
+PDCM_POPS_ORDERED = ['L2e', 'L2i', 'L4e', 'L4i', 'L5e', 'L5i', 'L6e', 'L6i']
+
+def plot_pdcm_matrix(matrix, pop_labels, method_name='GNN', save_dir='results'):
+    os.makedirs(save_dir, exist_ok=True)
+    cmap = sns.diverging_palette(240, 10, as_cmap=True)
+    vmin = min(matrix.min(), -1e-6)
+    vmax = max(matrix.max(),  1e-6)
+    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(matrix,
+                xticklabels=False, yticklabels=False,
+                cmap=cmap, norm=norm,
+                cbar_kws={'label': 'Connection strength'},
+                square=True)
+
+    boundaries, tick_centers, tick_labels = [], [], []
+    cursor = 0
+    for pop in PDCM_POPS_ORDERED:
+        count = int(np.sum(pop_labels == pop))
+        if count == 0:
+            continue
+        boundaries.append(cursor)
+        tick_centers.append(cursor + count / 2)
+        tick_labels.append(pop)
+        cursor += count
+    boundaries.append(cursor)
+
+    ax = plt.gca()
+    for b in boundaries:
+        ax.axhline(b, color='k', linewidth=0.5)
+        ax.axvline(b, color='k', linewidth=0.5)
+    ax.set_xticks(tick_centers); ax.set_xticklabels(tick_labels, fontsize=8)
+    ax.set_yticks(tick_centers); ax.set_yticklabels(tick_labels, fontsize=8, rotation=0)
+
+    plt.title(f'{method_name} Connectivity Matrix')
+    plt.xlabel('Postsynaptic')
+    plt.ylabel('Presynaptic')
     plt.tight_layout()
     save_path = os.path.join(save_dir, f"{method_name.replace(' ', '_').lower()}.pdf")
     plt.savefig(save_path, format='pdf')
@@ -167,13 +212,10 @@ def calculate_fit(true_conn, learned_conn, plot=True):
 
 
 def align_matrices(adjacency_matrices, excitatory=True):
+    excitation = 1 if np.sum(adjacency_matrices[0]) >= 0 else 0
+    if (excitatory and not excitation) or (not excitatory and excitation):
+        adjacency_matrices[0] = -adjacency_matrices[0]
     reference_matrix = adjacency_matrices[0]
-    
-    excitation = 1 if np.sum(reference_matrix) >=0 else 0
-    if excitatory:
-        reference_matrix = reference_matrix if excitation else -reference_matrix
-    else:
-        reference_matrix = reference_matrix if not excitation else -reference_matrix
 
     for i in range(1, len(adjacency_matrices)):
         current_matrix = adjacency_matrices[i]

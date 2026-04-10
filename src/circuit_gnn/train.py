@@ -156,7 +156,6 @@ def train_model(
     criterion: Optional[nn.Module] = None,
     encoder_kwargs: Optional[Dict[str, Any]] = None,
     gnn_kwargs: Optional[Dict[str, Any]] = None,
-    initial_adj: Optional[torch.Tensor] = None,
     run_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     os.makedirs(config.output_dir, exist_ok=True)
@@ -169,10 +168,6 @@ def train_model(
         config.seed,
         config.num_workers,
     )
-
-    gnn_kwargs = gnn_kwargs or {}
-    if initial_adj is not None:
-        gnn_kwargs["A_init"] = initial_adj
 
     encoder, gnn = build_models(
         num_neurons=num_neurons,
