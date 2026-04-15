@@ -94,6 +94,50 @@ def plot_pdcm_matrix(matrix, pop_labels, method_name='GNN', save_dir='results'):
     plt.close()
 
 
+V1_POPS_ORDERED = ['23E', '23I', '4E', '4I', '5E', '5I', '6E', '6I']
+
+def plot_v1_matrix(matrix, neuron_names, method_name='GNN', save_dir='results'):
+    os.makedirs(save_dir, exist_ok=True)
+    cmap = sns.diverging_palette(240, 10, as_cmap=True)
+    vmin = min(matrix.min(), -1e-6)
+    vmax = max(matrix.max(),  1e-6)
+    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(matrix,
+                xticklabels=False, yticklabels=False,
+                cmap=cmap, norm=norm,
+                cbar_kws={'label': 'Connection strength'},
+                square=True)
+
+    boundaries, tick_centers, tick_labels = [], [], []
+    cursor = 0
+    for pop in V1_POPS_ORDERED:
+        count = sum(1 for name in neuron_names if name == pop)
+        if count == 0:
+            continue
+        boundaries.append(cursor)
+        tick_centers.append(cursor + count / 2)
+        tick_labels.append(pop)
+        cursor += count
+    boundaries.append(cursor)
+
+    ax = plt.gca()
+    for b in boundaries:
+        ax.axhline(b, color='k', linewidth=0.5)
+        ax.axvline(b, color='k', linewidth=0.5)
+    ax.set_xticks(tick_centers); ax.set_xticklabels(tick_labels, fontsize=8)
+    ax.set_yticks(tick_centers); ax.set_yticklabels(tick_labels, fontsize=8, rotation=0)
+
+    plt.title(f'{method_name} Connectivity Matrix')
+    plt.xlabel('Postsynaptic')
+    plt.ylabel('Presynaptic')
+    plt.tight_layout()
+    save_path = os.path.join(save_dir, f"{method_name.replace(' ', '_').lower()}.pdf")
+    plt.savefig(save_path, format='pdf')
+    plt.close()
+
+
 def calculate_fit(true_conn, learned_conn, plot=True):
     mask = ~np.eye(true_conn.shape[0], dtype=bool)
     n = true_conn.shape[0]

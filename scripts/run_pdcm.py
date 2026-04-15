@@ -11,7 +11,7 @@ sys.path.insert(0, str(root / "src"))
 import csv
 from circuit_gnn.data import load_pdcm_network
 from circuit_gnn.train import TrainConfig, train_model, load_checkpoint
-from circuit_gnn.utils import plot_connectivity_matrix
+from circuit_gnn.utils import plot_pdcm_matrix
 
 
 def main():
@@ -20,7 +20,7 @@ def main():
     signed_init = "signed" in init_method.lower()
     A_init_path = Path("datasets") / data / "init" / f"{init_method}.npy"
 
-    downsample_factor = 2 # 2 ms
+    downsample_factor = 1 # 1 ms
     num_runs = 50
     window_size = 100
     batch_size = 16
@@ -40,7 +40,8 @@ def main():
 
     device = torch.device("cuda") if torch.cuda.is_available() else "cpu"
 
-    binned_spikes, true_conn, neuron_names = load_pdcm_network(downsample_factor=downsample_factor)
+    binned_spikes, true_conn, _ = load_pdcm_network(downsample_factor=downsample_factor)
+    pop_labels = np.load('datasets/pdcm/pop_labels.npy')
     num_channels, num_time = binned_spikes.shape
     print(f"Loaded {num_channels} channels, {num_time} time points.")
 
@@ -130,7 +131,7 @@ def main():
             learned_A = A_final.cpu().numpy().T
 
         np.save(output_dir / f"gnn_{run_idx}.npy", learned_A)
-        plot_connectivity_matrix(learned_A, neuron_names=neuron_names, method_name=f"GNN {run_idx}", save_dir=str(output_dir), plot_val=False)
+        plot_pdcm_matrix(learned_A, pop_labels, method_name=f"gnn_{run_idx}", save_dir=str(output_dir))
         all_A.append(learned_A)
 
         # Ablation test
@@ -174,12 +175,6 @@ def main():
 
         end_time = time.perf_counter()
         print(f"Run {run_idx} completed in {end_time - start_time:.2f} seconds.")
-
-    # Average adjacency
-    if all_A:
-        avg_A = np.mean(all_A, axis=0)
-        np.save(output_dir / "gnn_avg.npy", avg_A)
-        plot_connectivity_matrix(avg_A, neuron_names=neuron_names, method_name="GNN_avg", save_dir=str(output_dir))
 
 
 if __name__ == "__main__":

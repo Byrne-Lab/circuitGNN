@@ -175,12 +175,6 @@ def main():
         end_time = time.perf_counter()
         print(f"Run {run_idx} completed in {end_time - start_time:.2f} seconds.")
 
-    # Average adjacency
-    if all_A:
-        avg_A = np.mean(all_A, axis=0)
-        np.save(output_dir / "gnn_avg.npy", avg_A)
-        plot_connectivity_matrix(avg_A, neuron_names=neuron_names, method_name="GNN_avg", save_dir=str(output_dir))
-
 
 if __name__ == "__main__":
     main()

@@ -3,14 +3,14 @@ from data import *
 import pandas as pd
 
 # SET PARAMETERS
-data = 'pdcm'
+data = 'v1'
 gap = 0.20 # only useful for yuto
 
 init = False
 signed = False
-num_runs = 3
+num_runs = 5
 # KEY PARAMETERS
-ablation_threshold = 0.25 # removes non-optimal runs based on ablation test
+ablation_threshold = 0.20 # removes non-optimal runs based on ablation test
 excitatory = True # Excitatory connections dominate (True) or inhibitory connections dominate (False) 
 
 # CREATE FOLDERS
@@ -27,14 +27,17 @@ print(f"Num runs: {num_runs}")
 print(f"Ablation threshold: {ablation_threshold}")
 
 # LOAD DATA
-data_map = {'yuto': load_yuto_network, 'arbitrary': load_arbitrary_network, 'pdcm': load_pdcm_network}
+data_map = {'yuto': load_yuto_network, 'arbitrary': load_arbitrary_network, 'pdcm': load_pdcm_network, 'v1': load_v1_network}
 binned_spikes, true_conn, neuron_names = data_map[data](gap=gap)
 
-# Plot function: pdcm uses population-boundary format, others use standard
+# Plot function: pdcm/v1 use population-boundary format, others use standard
 if data == 'pdcm':
     pop_labels = np.load(f'datasets/pdcm/pop_labels.npy')
     def do_plot(matrix, method_name):
         plot_pdcm_matrix(matrix, pop_labels, method_name=method_name, save_dir=results_loc)
+elif data == 'v1':
+    def do_plot(matrix, method_name):
+        plot_v1_matrix(matrix, neuron_names, method_name=method_name, save_dir=results_loc)
 else:
     def do_plot(matrix, method_name):
         plot_connectivity_matrix(matrix, neuron_names=neuron_names, method_name=method_name, save_dir=results_loc, plot_val=False)
