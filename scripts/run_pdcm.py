@@ -20,8 +20,8 @@ def main():
     signed_init = "signed" in init_method.lower()
     A_init_path = Path("datasets") / data / "init" / f"{init_method}.npy"
 
-    downsample_factor = 1 # 1 ms
-    num_runs = 50
+    downsample_factor = 2 # 2 ms
+    num_runs = 5
     window_size = 100
     batch_size = 16
     num_epochs = 50

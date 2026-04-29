@@ -28,7 +28,7 @@ def make_saturated_rdbu(cut=0.15):
     ])
     return LinearSegmentedColormap.from_list("RdBu_saturated", colors)
 
-
+"""
 def plot_connectivity_matrix(matrix, neuron_names, method_name='GNN', cmap=sns.diverging_palette(240, 10, as_cmap=True), save_dir='benchmarking_results', plot_val=True):
     os.makedirs(save_dir, exist_ok=True)
     vmin, vmax = matrix.min(), matrix.max()
@@ -41,6 +41,39 @@ def plot_connectivity_matrix(matrix, neuron_names, method_name='GNN', cmap=sns.d
         sns.heatmap(matrix, xticklabels=neuron_names, yticklabels=neuron_names, cmap=cmap, norm=norm, cbar_kws={'label': 'Connectivity Strength'}, square=True, annot=True, fmt=".3f")
     else:
         sns.heatmap(matrix, xticklabels=neuron_names, yticklabels=neuron_names, cmap=cmap, norm=norm, cbar_kws={'label': 'Connectivity Strength'}, square=True)
+    plt.title(f"{method_name} Connectivity Matrix")
+    plt.xlabel("Postsynaptic neuron")
+    plt.ylabel("Presynaptic neuron")
+    plt.tight_layout()
+    save_path = os.path.join(save_dir, f"{method_name.replace(' ', '_').lower()}.pdf")
+    plt.savefig(save_path, format='pdf')
+    plt.close()
+"""
+
+def plot_connectivity_matrix(matrix, neuron_names, method_name='GNN', cmap=sns.diverging_palette(240, 10, as_cmap=True), save_dir='benchmarking_results', plot_val=True):
+    os.makedirs(save_dir, exist_ok=True)
+    vmin = min(matrix.min(), -1e-6)
+    vmax = max(matrix.max(),  1e-6)
+    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+
+    # Mask exact zeros so they render as white
+    cmap = copy.copy(cmap)          # avoid mutating the default argument
+    cmap.set_bad(color='white')
+    masked_matrix = np.ma.masked_where(matrix == 0, matrix)
+
+    plt.figure(figsize=(10, 8))
+    if plot_val:
+        # Build annotation array: empty string where value is 0
+        annot_labels = np.where(matrix == 0, '', 
+                                np.vectorize(lambda v: f"{v:.3f}")(matrix))
+        sns.heatmap(masked_matrix, xticklabels=neuron_names, yticklabels=neuron_names,
+                    cmap=cmap, norm=norm, cbar_kws={'label': 'Connectivity Strength'},
+                    square=True, annot=annot_labels, fmt='')   # fmt='' because values are already strings
+    else:
+        sns.heatmap(masked_matrix, xticklabels=neuron_names, yticklabels=neuron_names,
+                    cmap=cmap, norm=norm, cbar_kws={'label': 'Connectivity Strength'},
+                    square=True)
+
     plt.title(f"{method_name} Connectivity Matrix")
     plt.xlabel("Postsynaptic neuron")
     plt.ylabel("Presynaptic neuron")

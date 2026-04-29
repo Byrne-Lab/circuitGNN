@@ -16,7 +16,7 @@ from circuit_gnn.utils import plot_connectivity_matrix
 
 def main():
     data = "yuto"
-    init_method = "signed_transfer_entropy"
+    init_method = "none"
     signed_init = "signed" in init_method.lower()
     A_init_path = Path("datasets") / data / "init" / f"{init_method}.npy"
 

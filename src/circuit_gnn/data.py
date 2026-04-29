@@ -10,7 +10,7 @@ import seaborn as sns
 import warnings
 warnings.filterwarnings("ignore")
 
-def load_arbitrary_network(downsample_factor = 10, gap=0):
+def load_arbitrary_network(downsample_factor = 10, gap=-1, step=-1):
     # gap is irrelevant for this dataset
     # downsample_factor: 10 -> 10 ms bins
     # 1 ms bins
@@ -83,7 +83,7 @@ def load_arbitrary_network(downsample_factor = 10, gap=0):
     sns.heatmap(true_conn, xticklabels=neuron_names, yticklabels=neuron_names,
                 cmap=cmap, norm=norm,
                 annot=annot_str, fmt='', annot_kws={'size': 5, 'color': 'black'},
-                cbar_kws={'label': 'Connection Strength (shifted mV)'},
+                cbar_kws={'label': 'Connection Strength (mV)'},
                 square=True)
     plt.title('True Connectivity')
     plt.xlabel('Postsynaptic')
@@ -95,24 +95,26 @@ def load_arbitrary_network(downsample_factor = 10, gap=0):
     return binned_spikes, true_conn, neuron_names
 
 
-def load_yuto_network(downsample_factor = 20, gap=0.20):
+def load_yuto_network(downsample_factor = 20, gap=0.20, step=1):
     # downsample_factor: 20 -> 10 ms bins, 10 -> 5 ms bins
     # 0.5 ms bins
     # 240 s total
-    # 13 neurons
+    # 14 neurons
 
     data_loc = 'datasets/yuto/spikes.out'
-    neuron_names = ['CBI2','B31a','B20', 'B30', 'B40', 'B34', 'B35', 'B63', 'B4', 'B8', 'B51a', 'B64a', 'B52']
-
+    with open('datasets/yuto/spikes.head') as f:
+        neuron_names = [line.split('[')[1].split('.')[0] for line in f if line.startswith('V[')]
+    
     # Load true connectivity
-    neuron_names = ['CBI2','B31a','B20', 'B30', 'B40', 'B34', 'B35', 'B63', 'B4', 'B8', 'B51a', 'B64a', 'B52']
-    true_conn = np.load(f"datasets/yuto/true_connectivity_{gap:.2f}.npy")
+    if step == 1:
+        true_conn = np.load(f"datasets/yuto/true_connectivity_{gap:.2f}.npy")
+    elif step == 2:
+        true_conn = np.load(f"datasets/yuto/true_connectivity_1_hop_{gap:.2f}.npy")
     true_conn = np.round(true_conn, 3)
+    true_conn = np.nan_to_num(true_conn, nan=0.0)
 
     cmap = sns.diverging_palette(240, 10, as_cmap=True)
-    vmin = min(true_conn.min(), -1e-6)
-    vmax = max(true_conn.max(),  1e-6)
-    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+    norm = TwoSlopeNorm(vmin=-5, vcenter=0, vmax=2)
 
     # build annotation array: value if nonzero, else empty string
     annot_str = [[f'{v:.3f}' if v != 0 else '' for v in row] for row in true_conn]
@@ -120,16 +122,16 @@ def load_yuto_network(downsample_factor = 20, gap=0.20):
     plt.figure(figsize=(10, 8))
     sns.heatmap(true_conn, xticklabels=neuron_names, yticklabels=neuron_names,
                 cmap=cmap, norm=norm,
-                annot=annot_str, fmt='', annot_kws={'size': 5, 'color': 'black'},
-                cbar_kws={'label': 'Connection Strength (shifted mV)'},
+                annot=annot_str, fmt='',
+                cbar_kws={'label': 'Connection Strength (mV)'},
                 square=True)
     plt.title('True Connectivity')
     plt.xlabel('Postsynaptic')
     plt.ylabel('Presynaptic')
     plt.tight_layout()
-    # plt.savefig("datasets/yuto/ground_truth.pdf", format='pdf')
+    plt.savefig("datasets/yuto/ground_truth.pdf", format='pdf')
     plt.close()
-
+    
     df = pd.read_csv(data_loc, sep='\t', header=None, skipinitialspace=True)
     voltage_data = df.iloc[:, 1:-1]
     voltage_array_original = voltage_data.values
@@ -159,22 +161,28 @@ def load_yuto_network(downsample_factor = 20, gap=0.20):
     print("Binned spikes possibilities:", np.unique(binned_spikes))
 
     # plot
+    bin_size_s = 0.5e-3 * downsample_factor
     spike_times = []
     for i in range(binned_spikes.shape[0]):
-        times = np.where(binned_spikes[i, :] > 0)[0]
+        times = np.where(binned_spikes[i, :] > 0)[0] * bin_size_s
         spike_times.append(times)
 
     plt.figure(figsize=(10, 5))
-    plt.eventplot(spike_times, orientation='horizontal', linelengths=0.8, color='black') 
-    plt.xlabel(f'Time Step (Binned by {downsample_factor})')
-    plt.ylabel('Neuron Index')
+    plt.eventplot(spike_times, orientation='horizontal', linelengths=0.8, color='black')
+    plt.yticks(range(len(neuron_names)), neuron_names)
+    plt.gca().invert_yaxis()
+    plt.xlabel('Time (s)')
+    plt.ylabel('Neuron')
     plt.title('Spike Raster')
+    plt.tight_layout()
+    plt.savefig("datasets/yuto/raster_plot.pdf", format='pdf')
     plt.close()
 
     return binned_spikes, true_conn, neuron_names
 
+load_yuto_network()
 
-def load_pdcm_network(downsample_factor=2, gap=0):
+def load_pdcm_network(downsample_factor=2, gap=0, step=0):
     """
     Load the PDCM NetPyNE simulation dataset.
 
@@ -273,7 +281,7 @@ def load_pdcm_network(downsample_factor=2, gap=0):
     return binned_spikes, true_conn, neuron_names
 
 
-def load_v1_network(downsample_factor=2, gap=0):
+def load_v1_network(downsample_factor=2, gap=0, step=0):
     """
     Load the multi-area-model V1 simulation dataset.
 

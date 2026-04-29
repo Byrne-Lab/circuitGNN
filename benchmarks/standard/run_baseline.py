@@ -2,14 +2,17 @@
 # https://www.statlect.com/asymptotic-theory/plug-in-principle
 # https://github.com/cbueth/infomeasure/
 
+import sys
+from pathlib import Path
+from baseline_models import *
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import os
 import time
-from src.circuit_gnn.data import *
-from src.circuit_gnn.utils import *
-from benchmarks.standard.baseline_models import calculate_correlation, calculate_mutual_information, calculate_transfer_entropy, calculate_conditional_transfer_entropy
+from circuit_gnn.data import *
+from circuit_gnn.utils import *
 data_map = {'yuto': load_yuto_network, 'arbitary': load_arbitrary_network}
 
 data = 'yuto'
@@ -35,10 +38,9 @@ plt.title("True Connectivity Matrix")
 plt.xlabel("Postsynaptic neuron")
 plt.ylabel("Presynaptic neuron")
 plt.tight_layout()
-plt.savefig(f"{save_dir}/ground_truth.pdf", format='pdf')
 plt.show()
 
-run_models = ['correlation']
+run_models = ['correlation', 'mutual_information', 'transfer_entropy']
 gdi_sign, di_sign = sign_inference(binned_spikes.T, 3) # obtain sign
 
 if 'correlation' in run_models:
@@ -56,11 +58,14 @@ if 'correlation' in run_models:
 if 'mutual_information' in run_models:
     start_time = time.time()
     mutual_information = calculate_mutual_information(binned_spikes)
-    np.save(os.path.join("mutual_information.npy"), mutual_information)
+    signed_mutual_information = mutual_information * gdi_sign
+    np.save(os.path.join(f"{save_dir}/mutual_information.npy"), mutual_information)
+    np.save(os.path.join(f"{save_dir}/signed_mutual_information.npy"), signed_mutual_information)
 
     end_time = time.time()
     print(f"Mutual information calculation time: {(end_time - start_time)/60:.2f} minutes")
     plot_connectivity_matrix(mutual_information, neuron_names, "Mutual Information", save_dir=save_dir)
+    plot_connectivity_matrix(signed_mutual_information, neuron_names, "Signed Mutual Information", save_dir=save_dir)
 
 if 'transfer_entropy' in run_models:
     start_time = time.time()

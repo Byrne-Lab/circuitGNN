@@ -4,11 +4,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
-import scipy.io as sio
-import seaborn as sns
 import scipy
-import os
-import time
 import copy
 import numpy.matlib as matlib
 

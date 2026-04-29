@@ -3,12 +3,13 @@ from data import *
 import pandas as pd
 
 # SET PARAMETERS
-data = 'v1'
+data = 'yuto'
 gap = 0.20 # only useful for yuto
+step = 1 # only useful for yuto
 
 init = False
 signed = False
-num_runs = 5
+num_runs = 50
 # KEY PARAMETERS
 ablation_threshold = 0.20 # removes non-optimal runs based on ablation test
 excitatory = True # Excitatory connections dominate (True) or inhibitory connections dominate (False) 
@@ -28,7 +29,7 @@ print(f"Ablation threshold: {ablation_threshold}")
 
 # LOAD DATA
 data_map = {'yuto': load_yuto_network, 'arbitrary': load_arbitrary_network, 'pdcm': load_pdcm_network, 'v1': load_v1_network}
-binned_spikes, true_conn, neuron_names = data_map[data](gap=gap)
+binned_spikes, true_conn, neuron_names = data_map[data](gap=gap, step=step)
 
 # Plot function: pdcm/v1 use population-boundary format, others use standard
 if data == 'pdcm':
@@ -40,7 +41,7 @@ elif data == 'v1':
         plot_v1_matrix(matrix, neuron_names, method_name=method_name, save_dir=results_loc)
 else:
     def do_plot(matrix, method_name):
-        plot_connectivity_matrix(matrix, neuron_names=neuron_names, method_name=method_name, save_dir=results_loc, plot_val=False)
+        plot_connectivity_matrix(matrix, neuron_names=neuron_names, method_name=method_name, save_dir=results_loc, plot_val=True)
 ablation_csv = pd.read_csv(ablation_loc)
 
 # RUN EVALUATION
@@ -110,6 +111,8 @@ print(f"\n Cai et al: Cosine={cosine_cai:.2f}, Pearson={pearson_cai:.2f}, Spearm
 A_init_path_corr = os.path.join(f"{data_loc}/signed_correlation.npy")
 A_init_corr = np.load(A_init_path_corr)
 A_init_corr = A_init_corr.T
+A_init_corr = np.round(A_init_corr, 3)
+
 do_plot(A_init_corr, 'signed_correlation')
 cosine_corr, pearson_corr, spearman_corr, overall_precision_corr, overall_recall_corr, overall_f1_corr, signed_precision_corr, signed_recall_corr, signed_f1_corr = calculate_fit(true_conn, A_init_corr)
 print(f"\nSigned Correlation: Cosine={cosine_corr:.2f}, Pearson={pearson_corr:.2f}, Spearman={spearman_corr:.2f}, Overall Precision={overall_precision_corr:.2f}, Overall Recall={overall_recall_corr:.2f}, Overall F1={overall_f1_corr:.2f}, Signed Precision={signed_precision_corr:.2f}, Signed Recall={signed_recall_corr:.2f}, Signed F1={signed_f1_corr:.2f}")
@@ -118,6 +121,8 @@ print(f"\nSigned Correlation: Cosine={cosine_corr:.2f}, Pearson={pearson_corr:.2
 A_init_path_te = os.path.join(f"{data_loc}/signed_transfer_entropy.npy")
 A_init_te = np.load(A_init_path_te)
 A_init_te = A_init_te.T
+A_init_te = np.round(A_init_te, 3)
+
 do_plot(A_init_te, 'signed_transfer_entropy')
 cosine_te, pearson_te, spearman_te, overall_precision_te, overall_recall_te, overall_f1_te, signed_precision_te, signed_recall_te, signed_f1_te = calculate_fit(true_conn, A_init_te)
 print(f"\nSigned Transfer Entropy: Cosine={cosine_te:.2f}, Pearson={pearson_te:.2f}, Spearman={spearman_te:.2f}, Overall Precision={overall_precision_te:.2f}, Overall Recall={overall_recall_te:.2f}, Overall F1={overall_f1_te:.2f}, Signed Precision={signed_precision_te:.2f}, Signed Recall={signed_recall_te:.2f}, Signed F1={signed_f1_te:.2f}")
