@@ -68,7 +68,6 @@ flipped = [passed_run_ids[i] for i,(b,a) in enumerate(zip(before,after)) if b!=a
 print(f"Flipped runs: {flipped}")
 
 
-
 # adjacency_matrices = align_matrices(adjacency_matrices, excitatory=excitatory)
 adjacency_matrices = np.stack(adjacency_matrices, axis=0)
 consistency_mask = get_consistent_connections(adjacency_matrices, threshold=0.8)
@@ -100,27 +99,34 @@ do_plot(signed_mean_A, 'mean_signed_Young_et_al')
 cosine_mean, pearson_mean, spearman_mean, overall_precision_topk, overall_recall_topk, overall_f1_topk, signed_precision_topk, signed_recall_topk, signed_f1_topk = calculate_fit(true_conn, signed_mean_A)
 print(f"\nYoung et al. Signed Mean: Cosine={cosine_mean:.2f}, Pearson={pearson_mean:.2f}, Spearman={spearman_mean:.2f}, Overall Precision={overall_precision_topk:.2f}, Overall Recall={overall_recall_topk:.2f}, Overall F1={overall_f1_topk:.2f}, Signed Precision={signed_precision_topk:.2f}, Signed Recall={signed_recall_topk:.2f}, Signed F1={signed_f1_topk:.2f}")
 
-# Baseline: Cai et al
-A_init_path_cai = os.path.join(f"{data_loc}/CTM-DI.npy")
+# Baseline: CTM_DI (Cai et al.)
+A_init_path_cai = os.path.join(f"{data_loc}/CTM_DI.npy")
 A_init_cai = np.load(A_init_path_cai)
 do_plot(A_init_cai, 'mean_CTM-DI')
 cosine_cai, pearson_cai, spearman_cai, overall_precision_cai, overall_recall_cai, overall_f1_cai, signed_precision_cai, signed_recall_cai, signed_f1_cai = calculate_fit(true_conn, A_init_cai)
 print(f"\n Cai et al: Cosine={cosine_cai:.2f}, Pearson={pearson_cai:.2f}, Spearman={spearman_cai:.2f}, Overall Precision={overall_precision_cai:.2f}, Overall Recall={overall_recall_cai:.2f}, Overall F1={overall_f1_cai:.2f}, Signed Precision={signed_precision_cai:.2f}, Signed Recall={signed_recall_cai:.2f}, Signed F1={signed_f1_cai:.2f}")
 
-# Baseline: signed_correlation
+# Baseline: Correlation
 A_init_path_corr = os.path.join(f"{data_loc}/signed_correlation.npy")
 A_init_corr = np.load(A_init_path_corr)
-A_init_corr = A_init_corr.T
 A_init_corr = np.round(A_init_corr, 3)
 
 do_plot(A_init_corr, 'signed_correlation')
 cosine_corr, pearson_corr, spearman_corr, overall_precision_corr, overall_recall_corr, overall_f1_corr, signed_precision_corr, signed_recall_corr, signed_f1_corr = calculate_fit(true_conn, A_init_corr)
 print(f"\nSigned Correlation: Cosine={cosine_corr:.2f}, Pearson={pearson_corr:.2f}, Spearman={spearman_corr:.2f}, Overall Precision={overall_precision_corr:.2f}, Overall Recall={overall_recall_corr:.2f}, Overall F1={overall_f1_corr:.2f}, Signed Precision={signed_precision_corr:.2f}, Signed Recall={signed_recall_corr:.2f}, Signed F1={signed_f1_corr:.2f}")
 
-# Baseline: signed_transfer_entropy
+# Baseline: Mutual information
+A_init_path_mi = os.path.join(f"{data_loc}/signed_mutual_information.npy")
+A_init_mi = np.load(A_init_path_mi)
+A_init_mi = np.round(A_init_mi, 3)
+
+do_plot(A_init_mi, 'signed_mutual_information')
+cosine_mi, pearson_mi, spearman_mi, overall_precision_mi, overall_recall_mi, overall_f1_mi, signed_precision_mi, signed_recall_mi, signed_f1_mi = calculate_fit(true_conn, A_init_mi)
+print(f"\nSigned Mutual Information: Cosine={cosine_mi:.2f}, Pearson={pearson_mi:.2f}, Spearman={spearman_mi:.2f}, Overall Precision={overall_precision_mi:.2f}, Overall Recall={overall_recall_mi:.2f}, Overall F1={overall_f1_mi:.2f}, Signed Precision={signed_precision_mi:.2f}, Signed Recall={signed_recall_mi:.2f}, Signed F1={signed_f1_mi:.2f}")
+
+# Baseline: Transfer entropy
 A_init_path_te = os.path.join(f"{data_loc}/signed_transfer_entropy.npy")
 A_init_te = np.load(A_init_path_te)
-A_init_te = A_init_te.T
 A_init_te = np.round(A_init_te, 3)
 
 do_plot(A_init_te, 'signed_transfer_entropy')
