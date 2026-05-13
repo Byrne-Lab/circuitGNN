@@ -11,11 +11,29 @@ import warnings
 warnings.filterwarnings("ignore")
 
 def load_arbitrary_network(downsample_factor = 10, gap=-1, step=-1):
-    # gap is irrelevant for this dataset
-    # downsample_factor: 10 -> 10 ms bins
-    # 1 ms bins
-    # 2000 s total
-    # 11 neurons
+    """
+    Load the arbitrary SNNAP simulation dataset.
+
+    Parameters
+    ----------
+    downsample_factor : int
+        Bin size in ms (e.g. 10 -> 10 ms bins). Native resolution is 1 ms.
+    gap : ignored
+        Kept for API compatibility with other loaders.
+    step : ignored
+        Kept for API compatibility with other loaders.
+
+    Returns
+    -------
+    binned_spikes : ndarray (11, n_timebins)
+        Spike counts per bin. Voltages thresholded at -10 mV with an 8-sample
+        refractory period; limited to first 300 s of simulation.
+    true_conn : ndarray (11, 11)
+        Signed synaptic weight matrix [pre, post].
+        Positive = excitatory, negative = inhibitory, 0 = no connection.
+    neuron_names : ndarray of int
+        Integer index 0–10 for each neuron.
+    """
 
     data_loc = 'datasets/arbitrary/spikes.out'
     time_max    = 300 # limit to 300 s
@@ -96,10 +114,32 @@ def load_arbitrary_network(downsample_factor = 10, gap=-1, step=-1):
 
 
 def load_yuto_network(downsample_factor = 20, gap=0.20, step=1):
-    # downsample_factor: 20 -> 10 ms bins, 10 -> 5 ms bins
-    # 0.5 ms bins
-    # 240 s total
-    # 14 neurons
+    """
+    Load the Yuto compartmental neuron simulation dataset.
+
+    Parameters
+    ----------
+    downsample_factor : int
+        Bin size in ms (e.g. 20 -> 10 ms bins, 10 -> 5 ms bins).
+        Native resolution is 0.5 ms.
+    gap : float
+        Synaptic gap/delay used to select the ground-truth connectivity file
+        (e.g. 0.20 loads ``true_connectivity_0.20.npy``).
+    step : {1, 2}
+        1 for direct (monosynaptic) connections, 2 for 1-hop (disynaptic)
+        connections. Selects between the two connectivity .npy files.
+
+    Returns
+    -------
+    binned_spikes : ndarray (14, n_timebins)
+        Spike counts per bin. Voltages thresholded at -10 mV with a 15-sample
+        refractory period; 240 s total simulation.
+    true_conn : ndarray (14, 14)
+        Signed synaptic weight matrix [pre, post] in mV.
+        Positive = excitatory, negative = inhibitory, 0 = no connection.
+    neuron_names : list of str
+        Neuron label for each neuron parsed from ``spikes.head``.
+    """
 
     data_loc = 'datasets/yuto/spikes.out'
     with open('datasets/yuto/spikes.head') as f:
@@ -180,8 +220,6 @@ def load_yuto_network(downsample_factor = 20, gap=0.20, step=1):
 
     return binned_spikes, true_conn, neuron_names
 
-load_yuto_network()
-
 def load_pdcm_network(downsample_factor=2, gap=0, step=0):
     """
     Load the PDCM NetPyNE simulation dataset.
@@ -190,7 +228,7 @@ def load_pdcm_network(downsample_factor=2, gap=0, step=0):
     ----------
     downsample_factor : int
         Bin size in ms (e.g. 10 -> 10 ms bins)
-\    gap : ignored
+    gap : ignored
         Kept for API compatibility with other loaders.
 
     Returns
@@ -235,7 +273,8 @@ def load_pdcm_network(downsample_factor=2, gap=0, step=0):
     plt.ylabel('Neuron Index')
     plt.title('Spike Raster')
     plt.tight_layout()
-    plt.show()
+    # plt.show()
+    plt.close()
 
     # Plot ground truth connectivity
     cmap = sns.diverging_palette(240, 10, as_cmap=True)
@@ -279,7 +318,6 @@ def load_pdcm_network(downsample_factor=2, gap=0, step=0):
     plt.close()
 
     return binned_spikes, true_conn, neuron_names
-
 
 def load_v1_network(downsample_factor=2, gap=0, step=0):
     """

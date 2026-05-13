@@ -7,6 +7,9 @@ import matplotlib.pyplot as plt
 import scipy
 import copy
 import numpy.matlib as matlib
+import infomeasure as im
+from statsmodels.tsa.vector_ar.var_model import VAR
+from joblib import Parallel, delayed
 
 # From Young et al. 2021
 def partial_corr(X):
@@ -65,6 +68,15 @@ def sign_inference(X,M):
     # RETURN CORR & PCORR SIGNS
     return X_pcorr_sign, X_corr_sign
 
+
+def get_top_neighbors(pairwise_te, j, exclude, k=3):
+    te_into_j = pairwise_te[:, j].copy()
+    te_into_j[exclude] = -np.inf
+    te_into_j[j] = -np.inf
+    top_k = np.argsort(te_into_j)[-k:]
+    return top_k[te_into_j[top_k] > 0]
+
+
 def H(prob):
     p = prob[prob>0]
     return -np.sum(p * np.log2(p))
@@ -104,7 +116,7 @@ def calculate_correlation(binned_spikes, max_lag = 1000):
 
 
 # mutual information
-def calculate_mutual_information(binned_spikes, max_lag = 1000):
+def calculate_mutual_information(binned_spikes, max_lag = 100):
     print('Calculating mutual information...')
     num_channels, ntime = binned_spikes.shape
     mutual_information = np.zeros((num_channels, num_channels, max_lag+1))
@@ -115,21 +127,14 @@ def calculate_mutual_information(binned_spikes, max_lag = 1000):
                 if i == j:
                     continue
 
-                x = binned_spikes[i, :ntime-tau]
-                y = binned_spikes[j, tau:]
+                mi = im.mutual_information(
+                    binned_spikes[i], # variable 1
+                    binned_spikes[j], # variable 2
+                    approach='miller_madow', # bias correction
+                    offset=tau, # lag
+                )
 
-                # empirical joint distribution
-                p00 = np.mean((x==0) & (y==0))
-                p01 = np.mean((x==0) & (y==1))
-                p10 = np.mean((x==1) & (y==0))
-                p11 = np.mean((x==1) & (y==1))
-
-                Pxy = np.array([[p00, p01], [p10, p11]])
-                Px = Pxy.sum(axis=1)
-                Py = Pxy.sum(axis=0)
-
-                Hx, Hy, Hxy = H(Px), H(Py), H(Pxy)
-                mutual_information[i, j, tau] = max(0, Hx + Hy - Hxy)
+                mutual_information[i, j, tau] = max(0, mi)
 
     mutual_information_max = np.max(mutual_information, axis=2)
     np.fill_diagonal(mutual_information_max, 0)
@@ -138,8 +143,7 @@ def calculate_mutual_information(binned_spikes, max_lag = 1000):
 
 
 # transfer entropy
-# https://pablomflores.com/transfer-entropy/
-def calculate_transfer_entropy(binned_spikes, L=1, max_lag = 1000):
+def calculate_transfer_entropy(binned_spikes, L=5, max_lag = 100):
     print('Calculating transfer entropy...')
     num_channels, ntime = binned_spikes.shape
     transfer_entropy = np.zeros((num_channels, num_channels, max_lag+1))
@@ -154,30 +158,18 @@ def calculate_transfer_entropy(binned_spikes, L=1, max_lag = 1000):
                 if ntime <= tau + L:
                     continue
 
-                n_samples = ntime - tau - L # how many values can y_next take
+                te = im.transfer_entropy(
+                    binned_spikes[i], # source
+                    binned_spikes[j], # target
+                    approach='miller_madow', # bias correction
+                    step_size=1, 
+                    prop_time=tau, # lag
+                    src_hist_len=L, # number of past observations
+                    dest_hist_len=L, # number of past observations
+                )
 
-                # create data structures
-                x = np.array([binned_spikes[i, l:l+n_samples] for l in range(L)]).T # source
-                y = np.array([binned_spikes[j, tau+l:tau+l+n_samples] for l in range(L)]).T # target
-                y_next = binned_spikes[j, tau+L:tau+L+n_samples] # target future step
+                transfer_entropy[i, j, tau] = max(0, te)
 
-                # reshape(-1, 1) -> single column, multiple rows
-                # 0 for y_next, 1 to L for y, L+1 to 2L+1 for x
-                # marginalizing over A means we remove the dependency on A by summing across all its possible states
-                counts, _ = np.histogramdd(np.column_stack([y_next.reshape(-1, 1), y, x]), bins=(2,)*(1+2*L), range=[(0,2)]*(1+2*L)) # 2L + 1 dimensions, (0,, 2) for binary -> 0 and 1
-                P = counts / counts.sum() # number of samples in each bin / total number of samples, sigma(P) = 1
-                P_yt_ytn = P.sum(axis=tuple(range(L+1, 2*L+1))) # sum over all x
-                P_yt_xt = P.sum(axis=0) # sum over ytn
-                P_yt = P.sum(axis=(0,) + tuple(range(L+1, 2*L+1))) # sum over yn and x
-
-                H_yt_ytn = H(P_yt_ytn)
-                H_yt_xt = H(P_yt_xt)
-                H_yt = H(P_yt)
-                H_yt_xt_ytn = H(P)
-            
-                te_xy = H_yt_ytn - H_yt - H_yt_xt_ytn + H_yt_xt
-                transfer_entropy[i, j, tau] = max(0, te_xy)
-                    
     transfer_entropy_max = np.max(transfer_entropy, axis=2)
     np.fill_diagonal(transfer_entropy_max, 0)
 
@@ -185,65 +177,53 @@ def calculate_transfer_entropy(binned_spikes, L=1, max_lag = 1000):
 
 
 # conditional transfer entropy
-# https://github.com/angelikipapana/PTE-variants
-def calculate_conditional_transfer_entropy(binned_spikes, L=1, max_lag = 200):
-    print(f'Calculating {L} step conditional transfer entropy...')
+def calculate_conditional_transfer_entropy(binned_spikes, pairwise_te, L=5):
+    print('Calculating conditional transfer entropy...')
     num_channels, ntime = binned_spikes.shape
-    conditional_transfer_entropy = np.zeros((num_channels, num_channels, max_lag+1))
-    for tau in range(1, max_lag+1):
-        if tau % 2 == 0:
-            print(f'Processing lag {tau}')
-        for i in range(num_channels):
-            for j in range(num_channels):
-                if i == j:
-                    continue
-                
-                if ntime <= tau + L:
-                    continue
+    conditional_transfer_entropy = np.zeros((num_channels, num_channels))
 
-                conditioning_indices = None
+    for i in range(num_channels):
+        for j in range(num_channels):
+            if i == j:
+                continue
 
-                if conditioning_indices is None:
-                    cond_idx = [k for k in range(num_channels)if k not in (i, j)]
-                else:
-                    cond_idx = conditioning_indices
+            top_neighbors = get_top_neighbors(pairwise_te, j, exclude=[i, j], k=3)
+            if len(top_neighbors) == 0:
+                continue
 
-                n_samples = ntime - tau - L # how many values can y_next take
-            
-                x = np.array([binned_spikes[i, l:l+n_samples] for l in range(L)]).T # source
-                y = np.array([binned_spikes[j, tau+l:tau+l+n_samples] for l in range(L)]).T # target
-                y_next = binned_spikes[j, tau+L:tau+L+n_samples] # target future step
-                z_list = []
-                for z_idx in cond_idx:
-                    z_i = np.array([binned_spikes[z_idx, l:l+n_samples] for l in range(L)]).T # conditioned variable
-                    z_list.append(z_i)
-                z = np.hstack(z_list) # conditioned variables
+            cond_vars = tuple(binned_spikes[k] for k in top_neighbors)
 
-                data = np.column_stack([y_next.reshape(-1, 1), y, x, z])
-                n_dims = data.shape[1]
-                counts, _ = np.histogramdd(data, bins=(2,)*n_dims, range=[(0,2)]*n_dims) 
-                P = counts / counts.sum()
+            cte = im.conditional_transfer_entropy(
+                binned_spikes[i],
+                binned_spikes[j],
+                cond=cond_vars,
+                approach='discrete',
+                step_size=1,
+                src_hist_len=L,
+                dest_hist_len=L,
+            )
 
-                # Marginals
-                idx_y = tuple(range(1, 1+L))
-                idx_x = tuple(range(1+L, 1+2*L))
-                idx_z = tuple(range(1+2*L, n_dims))
+            conditional_transfer_entropy[i, j] = max(0, cte)
 
-                # Compute probabilities
-                P_ytn_yt_z = P.sum(axis=idx_x) # p(y_next, y, z)
-                P_yt_z = P.sum(axis=(0,) + idx_x) # p(y, z)
-                P_ytn_yt_xt_z = P # p(y_next, y, x, z)
-                P_yt_xt_z = P.sum(axis=0) # p(y, x, z)
+    np.fill_diagonal(conditional_transfer_entropy, 0)
+    return conditional_transfer_entropy
 
-                H_ytn_yt_zt = H(P_ytn_yt_z)
-                H_yt_z = H(P_yt_z)
-                H_ytn_yt_xt_z = H(P_ytn_yt_xt_z)
-                H_yt_xt_z = H(P_yt_xt_z)
 
-                pte_xy = H_ytn_yt_zt - H_yt_z - H_ytn_yt_xt_z + H_yt_xt_z
-                conditional_transfer_entropy[i, j, tau] = max(0, pte_xy)
+# Granger causality
+def calculate_granger_causality(binned_spikes, max_lag = 100):
+    print('Calculating Granger causality...')
+    num_channels, ntime = binned_spikes.shape
 
-    conditional_transfer_entropy_max = np.max(conditional_transfer_entropy, axis=2)
-    np.fill_diagonal(conditional_transfer_entropy_max, 0)
+    model = VAR(binned_spikes.T)
+    result = model.fit(maxlags=max_lag, ic='aic')
+    granger_causality = np.zeros((num_channels, num_channels))
 
-    return conditional_transfer_entropy_max
+    for i in range(num_channels):
+        for j in range(num_channels):
+            if i == j:
+                continue
+
+            test = result.test_causality(caused=j, causing=i, kind='f')
+            granger_causality[i, j] = test.test_statistic
+
+    return granger_causality

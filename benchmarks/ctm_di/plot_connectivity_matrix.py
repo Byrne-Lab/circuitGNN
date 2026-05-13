@@ -1,16 +1,16 @@
-import copy
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+
 import h5py
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.colors import TwoSlopeNorm
-import seaborn as sns
 import os
+from circuit_gnn.utils import plot_connectivity_matrix, plot_pdcm_matrix
+
 os.chdir('C:/Users/agupta17/Documents/GitHub/circuitGNN/datasets')
-data_name = 'yuto'
+data_name = 'pdcm'
 
 data = f"{data_name}/init/ctm_di_raw_connectivity.mat"
-with open('C:/Users/agupta17/Documents/GitHub/circuitGNN/datasets/yuto/spikes.head') as f:
-    neuron_names = [line.split('[')[1].split('.')[0] for line in f if line.startswith('V[')]
 
 def threshold_di(C, min_consecutive=4, threshold=0.01):
     n_bins, n, _ = C.shape
@@ -35,40 +35,19 @@ def threshold_di(C, min_consecutive=4, threshold=0.01):
 with h5py.File(data, "r") as f:
     C = np.array(f["conn_3d"])
     C = C.transpose(0, 2, 1)
-    print(f"Raw connectivity shape: {C.shape}")  # should be (n_bins, n_neurons, n_neurons)
-
+    print(f"Raw connectivity shape: {C.shape}")
 
 C_thresh = threshold_di(C)
-print(C)
 print(f"Thresholded connectivity shape: {C_thresh.shape}")
 print(f"Non-zero connections: {np.count_nonzero(C_thresh)}")
 
-# Plot
-vmin = min(C_thresh.min(), -1e-6)
-vmax = max(C_thresh.max(),  1e-6)
-norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
-cmap = sns.diverging_palette(240, 10, as_cmap=True)
-cmap = copy.copy(cmap)
-cmap.set_bad(color='white')
-masked = np.ma.masked_where(C_thresh == 0, C_thresh)
-annot_labels = np.where(C_thresh == 0, '', np.vectorize(lambda v: f"{v:.3f}")(C_thresh))
+save_dir = f"{data_name}/init"
+np.save(f"{save_dir}/CTM_DI.npy", C_thresh)
 
-plt.figure(figsize=(10, 8))
-sns.heatmap(
-    masked,
-    xticklabels=neuron_names,
-    yticklabels=neuron_names,
-    cmap=cmap,
-    norm=norm,
-    cbar_kws={'label': 'Connectivity Strength'},
-    square=True,
-    annot=annot_labels,
-    fmt='',
-)
-plt.title("CTM-DI Connectivity Matrix")
-plt.xlabel("Postsynaptic neuron")
-plt.ylabel("Presynaptic neuron")
-plt.tight_layout()
-plt.savefig(f"{data_name}/init/CTM_DI.pdf", format='pdf')
-np.save(f"{data_name}/init/CTM_DI.npy", C_thresh)
-plt.close()
+if data_name == 'pdcm':
+    pop_labels = np.load(f'{data_name}/pop_labels.npy')
+    plot_pdcm_matrix(C_thresh, pop_labels, method_name='CTM-DI', save_dir=save_dir)
+else:
+    with open(f'C:/Users/agupta17/Documents/GitHub/circuitGNN/datasets/yuto/spikes.head') as f:
+        neuron_names = [line.split('[')[1].split('.')[0] for line in f if line.startswith('V[')]
+    plot_connectivity_matrix(C_thresh, neuron_names, method_name='CTM-DI', save_dir=save_dir, plot_val=False)

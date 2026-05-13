@@ -3,7 +3,7 @@ from data import *
 import pandas as pd
 
 # SET PARAMETERS
-data = 'yuto'
+data = 'pdcm'
 gap = 0.20 # only useful for yuto
 step = 1 # only useful for yuto
 
@@ -107,6 +107,15 @@ cosine_cai, pearson_cai, spearman_cai, overall_precision_cai, overall_recall_cai
 print(f"\n Cai et al: Cosine={cosine_cai:.2f}, Pearson={pearson_cai:.2f}, Spearman={spearman_cai:.2f}, Overall Precision={overall_precision_cai:.2f}, Overall Recall={overall_recall_cai:.2f}, Overall F1={overall_f1_cai:.2f}, Signed Precision={signed_precision_cai:.2f}, Signed Recall={signed_recall_cai:.2f}, Signed F1={signed_f1_cai:.2f}")
 
 # Baseline: Correlation
+A_init_path_corr = os.path.join(f"{data_loc}/correlation.npy")
+A_init_corr = np.load(A_init_path_corr)
+A_init_corr = np.round(A_init_corr, 3)
+
+do_plot(A_init_corr, 'correlation')
+cosine_corr, pearson_corr, spearman_corr, overall_precision_corr, overall_recall_corr, overall_f1_corr, signed_precision_corr, signed_recall_corr, signed_f1_corr = calculate_fit(true_conn, A_init_corr)
+print(f"\nCorrelation: Cosine={cosine_corr:.2f}, Pearson={pearson_corr:.2f}, Spearman={spearman_corr:.2f}, Overall Precision={overall_precision_corr:.2f}, Overall Recall={overall_recall_corr:.2f}, Overall F1={overall_f1_corr:.2f}, Signed Precision={signed_precision_corr:.2f}, Signed Recall={signed_recall_corr:.2f}, Signed F1={signed_f1_corr:.2f}")
+
+# Baseline: Signed Correlation
 A_init_path_corr = os.path.join(f"{data_loc}/signed_correlation.npy")
 A_init_corr = np.load(A_init_path_corr)
 A_init_corr = np.round(A_init_corr, 3)
