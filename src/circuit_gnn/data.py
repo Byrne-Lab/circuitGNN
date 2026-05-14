@@ -89,6 +89,20 @@ def load_arbitrary_network(downsample_factor = 10, gap=-1, step=-1):
     true_conn[3,10] = 1
 
     neuron_names = np.arange(num_neurons)
+
+    bin_size_s = 1e-3 * downsample_factor
+    spike_times = [np.where(binned_spikes[i] > 0)[0] * bin_size_s for i in range(num_neurons)]
+    plt.figure(figsize=(10, 5))
+    plt.eventplot(spike_times, orientation='horizontal', linelengths=0.8, color='black')
+    plt.yticks(range(num_neurons), neuron_names)
+    plt.gca().invert_yaxis()
+    plt.xlabel('Time (s)')
+    plt.ylabel('Neuron')
+    plt.title('Spike Raster')
+    plt.tight_layout()
+    plt.savefig("datasets/arbitrary/raster_plot.pdf", format='pdf')
+    plt.close()
+
     cmap = sns.diverging_palette(240, 10, as_cmap=True)
     vmin = min(true_conn.min(), -1e-6)
     vmax = max(true_conn.max(),  1e-6)
@@ -273,7 +287,7 @@ def load_pdcm_network(downsample_factor=2, gap=0, step=0):
     plt.ylabel('Neuron Index')
     plt.title('Spike Raster')
     plt.tight_layout()
-    # plt.show()
+    plt.savefig(f'{data_dir}/raster_plot.pdf', format='pdf')
     plt.close()
 
     # Plot ground truth connectivity
@@ -423,7 +437,6 @@ def load_v1_network(downsample_factor=2, gap=0, step=0):
     plt.title(f'V1 Spike Raster  ({n_neurons} neurons, bin={downsample_factor} ms)')
     plt.tight_layout()
     plt.savefig(f'{data_dir}/raster.pdf', format='pdf')
-    plt.show()
 
     # Connectivity heatmap
 
@@ -464,6 +477,5 @@ def load_v1_network(downsample_factor=2, gap=0, step=0):
     plt.ylabel('Presynaptic (source)')
     plt.tight_layout()
     plt.savefig(f'{data_dir}/ground_truth.pdf', format='pdf')
-    plt.show()
 
     return binned_spikes, true_conn, neuron_names

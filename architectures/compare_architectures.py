@@ -51,7 +51,7 @@ def load_architecture_results(
     csv_path = arch_dir / "ablation.csv"
 
     if not csv_path.exists():
-        return None, 0, 0
+        return None, None, 0, 0
 
     df = pd.read_csv(csv_path)
     total = len(df)
@@ -64,11 +64,14 @@ def load_architecture_results(
             matrices.append(np.load(p))
 
     if not matrices:
-        return None, 0, total
+        return None, None, 0, total
 
     matrices = align_matrices(matrices, excitatory=excitatory)
-    mean_A = np.round(np.stack(matrices).mean(axis=0), 3)
-    return mean_A, len(matrices), total
+    stacked = np.stack(matrices)
+    mean_A = np.round(stacked.mean(axis=0), 3)
+    consistency_mask = get_consistent_connections(stacked, threshold=0.8)
+    consistent_mean_A = mean_A * consistency_mask
+    return mean_A, consistent_mean_A, len(matrices), total
 
 
 def main():
@@ -87,7 +90,7 @@ def main():
 
     rows = []
     for arch in args.architectures:
-        mean_A, n_passed, n_total = load_architecture_results(
+        mean_A, consistent_mean_A, n_passed, n_total = load_architecture_results(
             args.dataset, arch, args.ablation_threshold, args.excitatory
         )
 
@@ -96,19 +99,24 @@ def main():
                 "architecture": arch, "n_passed": 0, "n_total": n_total,
                 "cosine": "-", "pearson": "-", "spearman": "-",
                 "f1_unsign": "-", "f1_signed": "-",
+                "pearson_cons": "-", "f1_unsign_cons": "-", "f1_signed_cons": "-",
             })
             continue
 
         cos, pear, spear, _, _, f1, _, _, sf1 = calculate_fit(true_conn, mean_A, plot=False)
+        _, pear_c, _, _, _, f1_c, _, _, sf1_c = calculate_fit(true_conn, consistent_mean_A, plot=False)
         rows.append({
-            "architecture": arch,
-            "n_passed":     n_passed,
-            "n_total":      n_total,
-            "cosine":       f"{cos:.3f}",
-            "pearson":      f"{pear:.3f}",
-            "spearman":     f"{spear:.3f}",
-            "f1_unsign":    f"{f1:.3f}",
-            "f1_signed":    f"{sf1:.3f}",
+            "architecture":   arch,
+            "n_passed":       n_passed,
+            "n_total":        n_total,
+            "cosine":         f"{cos:.3f}",
+            "pearson":        f"{pear:.3f}",
+            "spearman":       f"{spear:.3f}",
+            "f1_unsign":      f"{f1:.3f}",
+            "f1_signed":      f"{sf1:.3f}",
+            "pearson_cons":   f"{pear_c:.3f}",
+            "f1_unsign_cons": f"{f1_c:.3f}",
+            "f1_signed_cons": f"{sf1_c:.3f}",
         })
 
     df = pd.DataFrame(rows).set_index("architecture")

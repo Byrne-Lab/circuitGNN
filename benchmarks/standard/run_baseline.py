@@ -18,7 +18,8 @@ data_map = {'yuto': load_yuto_network, 'arbitrary': load_arbitrary_network, 'pdc
 data = 'yuto'
 
 if data == 'yuto':
-    downsample_factor = 20
+    # downsample_factor = 20
+    downsample_factor = 2 # 1 ms
 elif data == 'arbitrary':
     downsample_factor = 10
 elif data == 'pdcm':
@@ -42,49 +43,55 @@ plt.ylabel("Presynaptic neuron")
 plt.tight_layout()
 plt.show()
 
-run_models = ['mutual_information', 'transfer_entropy', 'conditional_transfer_entropy'] # options: 'correlation', 'mutual_information', 'transfer_entropy', 'conditional_transfer_entropy', 'granger_causality'
+run_models = ['correlation', 'mutual_information', 'transfer_entropy', 'granger_causality'] # options: 'correlation', 'mutual_information', 'transfer_entropy', 'conditional_transfer_entropy', 'granger_causality'
 gdi_sign, di_sign = sign_inference(binned_spikes.T, 3) # obtain sign
 
 if 'correlation' in run_models:
     start_time = time.time()
-    directed_correlation = calculate_correlation(binned_spikes)
-    signed_directed_correlation = directed_correlation * gdi_sign
-    np.save(os.path.join(f"{save_dir}/correlation.npy"), directed_correlation)
-    np.save(os.path.join(f"{save_dir}/signed_correlation.npy"), signed_directed_correlation)
+    ci_correlation, pk_correlation = calculate_correlation(binned_spikes)
+    signed_pk_correlation = pk_correlation * gdi_sign
+    np.save(f"{save_dir}/correlation_pk.npy", pk_correlation)
+    np.save(f"{save_dir}/correlation_ci.npy", ci_correlation)
+    np.save(f"{save_dir}/signed_correlation_pk.npy", signed_pk_correlation)
 
     end_time = time.time()
     print(f"Correlation calculation time: {(end_time - start_time)/60:.2f} minutes")
-    plot_connectivity_matrix(directed_correlation, neuron_names, "Correlation", save_dir=save_dir, plot_val=False)
-    plot_connectivity_matrix(signed_directed_correlation, neuron_names, "Signed Correlation", save_dir=save_dir, plot_val=False)
+    plot_connectivity_matrix(pk_correlation, neuron_names, "Correlation PK", save_dir=save_dir, plot_val=False)
+    plot_connectivity_matrix(ci_correlation, neuron_names, "Correlation CI", save_dir=save_dir, plot_val=False)
+    plot_connectivity_matrix(signed_pk_correlation, neuron_names, "Signed Correlation PK", save_dir=save_dir, plot_val=False)
 
 if 'mutual_information' in run_models:
     start_time = time.time()
-    mutual_information = calculate_mutual_information(binned_spikes, max_lag=100)
-    signed_mutual_information = mutual_information * gdi_sign
-    np.save(os.path.join(f"{save_dir}/mutual_information.npy"), mutual_information)
-    np.save(os.path.join(f"{save_dir}/signed_mutual_information.npy"), signed_mutual_information)
+    ci_mi, pk_mi = calculate_mutual_information(binned_spikes, max_lag=100)
+    signed_pk_mi = pk_mi * gdi_sign
+    np.save(f"{save_dir}/mutual_information_pk.npy", pk_mi)
+    np.save(f"{save_dir}/mutual_information_ci.npy", ci_mi)
+    np.save(f"{save_dir}/signed_mutual_information_pk.npy", signed_pk_mi)
 
     end_time = time.time()
     print(f"Mutual information calculation time: {(end_time - start_time)/60:.2f} minutes")
-    plot_connectivity_matrix(mutual_information, neuron_names, "Mutual Information", save_dir=save_dir, plot_val=False)
-    plot_connectivity_matrix(signed_mutual_information, neuron_names, "Signed Mutual Information", save_dir=save_dir, plot_val=False)
+    plot_connectivity_matrix(pk_mi, neuron_names, "Mutual Information PK", save_dir=save_dir, plot_val=False)
+    plot_connectivity_matrix(ci_mi, neuron_names, "Mutual Information CI", save_dir=save_dir, plot_val=False)
+    plot_connectivity_matrix(signed_pk_mi, neuron_names, "Signed Mutual Information PK", save_dir=save_dir, plot_val=False)
 
 if 'transfer_entropy' in run_models:
     start_time = time.time()
-    transfer_entropy = calculate_transfer_entropy(binned_spikes, L=1, max_lag = 100)
-    signed_transfer_entropy = transfer_entropy * gdi_sign
-    np.save(os.path.join(f"{save_dir}/transfer_entropy.npy"), transfer_entropy)
-    np.save(os.path.join(f"{save_dir}/signed_transfer_entropy.npy"), signed_transfer_entropy)
+    ci_te, pk_te = calculate_transfer_entropy(binned_spikes, L=5, max_lag=100)
+    signed_pk_te = pk_te * gdi_sign
+    np.save(f"{save_dir}/transfer_entropy_pk.npy", pk_te)
+    np.save(f"{save_dir}/transfer_entropy_ci.npy", ci_te)
+    np.save(f"{save_dir}/signed_transfer_entropy_pk.npy", signed_pk_te)
 
     end_time = time.time()
     print(f"Transfer entropy calculation time: {(end_time - start_time)/60:.2f} minutes")
-    plot_connectivity_matrix(transfer_entropy, neuron_names, "Transfer Entropy", save_dir=save_dir, plot_val=False)
-    plot_connectivity_matrix(signed_transfer_entropy, neuron_names, "Signed Transfer Entropy", save_dir=save_dir, plot_val=False)
+    plot_connectivity_matrix(pk_te, neuron_names, "Transfer Entropy PK", save_dir=save_dir, plot_val=False)
+    plot_connectivity_matrix(ci_te, neuron_names, "Transfer Entropy CI", save_dir=save_dir, plot_val=False)
+    plot_connectivity_matrix(signed_pk_te, neuron_names, "Signed Transfer Entropy PK", save_dir=save_dir, plot_val=False)
 
 if 'conditional_transfer_entropy' in run_models:
     start_time = time.time()
-    pairwise_te = np.load(f"{save_dir}/transfer_entropy.npy")
-    conditional_transfer_entropy = calculate_conditional_transfer_entropy(binned_spikes, pairwise_te, L=1)
+    pairwise_te = np.load(f"{save_dir}/transfer_entropy_pk.npy")
+    conditional_transfer_entropy = calculate_conditional_transfer_entropy(binned_spikes, pairwise_te, L=5)
     np.save(os.path.join(f"{save_dir}/conditional_transfer_entropy.npy"), conditional_transfer_entropy)
 
     end_time = time.time()

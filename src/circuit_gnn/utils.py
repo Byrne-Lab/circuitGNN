@@ -28,27 +28,6 @@ def make_saturated_rdbu(cut=0.15):
     ])
     return LinearSegmentedColormap.from_list("RdBu_saturated", colors)
 
-"""
-def plot_connectivity_matrix(matrix, neuron_names, method_name='GNN', cmap=sns.diverging_palette(240, 10, as_cmap=True), save_dir='benchmarking_results', plot_val=True):
-    os.makedirs(save_dir, exist_ok=True)
-    vmin, vmax = matrix.min(), matrix.max()
-    vmin = min(matrix.min(), -1e-6)
-    vmax = max(matrix.max(),  1e-6)
-
-    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
-    plt.figure(figsize=(10, 8))
-    if plot_val:
-        sns.heatmap(matrix, xticklabels=neuron_names, yticklabels=neuron_names, cmap=cmap, norm=norm, cbar_kws={'label': 'Connectivity Strength'}, square=True, annot=True, fmt=".3f")
-    else:
-        sns.heatmap(matrix, xticklabels=neuron_names, yticklabels=neuron_names, cmap=cmap, norm=norm, cbar_kws={'label': 'Connectivity Strength'}, square=True)
-    plt.title(f"{method_name} Connectivity Matrix")
-    plt.xlabel("Postsynaptic neuron")
-    plt.ylabel("Presynaptic neuron")
-    plt.tight_layout()
-    save_path = os.path.join(save_dir, f"{method_name.replace(' ', '_').lower()}.pdf")
-    plt.savefig(save_path, format='pdf')
-    plt.close()
-"""
 
 def plot_connectivity_matrix(matrix, neuron_names, method_name='GNN', cmap=sns.diverging_palette(240, 10, as_cmap=True), save_dir='benchmarking_results', plot_val=True):
     os.makedirs(save_dir, exist_ok=True)
@@ -175,20 +154,20 @@ def calculate_fit(true_conn, learned_conn, plot=True):
     mask = ~np.eye(true_conn.shape[0], dtype=bool)
     n = true_conn.shape[0]
 
-    # ── continuous metrics ───────────────────────────────────────────────────
+    # continuous metrics
     v1 = true_conn[mask].flatten()
     v2 = learned_conn[mask].flatten()
     cos_sim  = np.dot(v1, v2) / (norm(v1) * norm(v2))
     pearson  = np.corrcoef(v1, v2)[0, 1]
     rho, _   = spearmanr(v1, v2)
 
-    # ── binary masks ─────────────────────────────────────────────────────────
+    # binary masks
     learned_bin = (learned_conn != 0).astype(int)
     true_bin    = (true_conn    != 0).astype(int)
     lb_m = learned_bin[mask]
     tb_m = true_bin[mask]
 
-    # ── unsigned TP/FP/FN ────────────────────────────────────────────────────
+    # unsigned TP/FP/FN
     tp = np.sum((lb_m == 1) & (tb_m == 1))
     fp = np.sum((lb_m == 1) & (tb_m == 0))
     fn = np.sum((lb_m == 0) & (tb_m == 1))
@@ -197,7 +176,7 @@ def calculate_fit(true_conn, learned_conn, plot=True):
     overall_recall    = tp / (tp + fn) if (tp + fn) > 0 else 0
     overall_f1        = 2 * (overall_precision * overall_recall) / (overall_precision + overall_recall) if (overall_precision + overall_recall) > 0 else 0
 
-    # ── signed TP/FP/FN ──────────────────────────────────────────────────────
+    # signed TP/FP/FN
     tp_pos = (learned_conn[mask] > 0) & (true_conn[mask] > 0)
     tp_neg = (learned_conn[mask] < 0) & (true_conn[mask] < 0)
     tp_s   = tp_pos | tp_neg
@@ -212,7 +191,7 @@ def calculate_fit(true_conn, learned_conn, plot=True):
     signed_recall    = tp_signed / (tp_signed + fn_signed) if (tp_signed + fn_signed) > 0 else 0
     signed_f1        = 2 * (signed_precision * signed_recall) / (signed_precision + signed_recall) if (signed_precision + signed_recall) > 0 else 0
 
-    # ── plot ─────────────────────────────────────────────────────────────────
+    # plot
     if plot:
         # classification maps
         clf_map  = np.full((n, n), np.nan)

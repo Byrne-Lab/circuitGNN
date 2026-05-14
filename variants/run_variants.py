@@ -41,10 +41,10 @@ _BASE_GNN = {"embedding_dim": 64, "hidden_dim": 64, "output_dim": 1,
 _BASE_CFG = {"batch_size": 16, "l1_lambda": 5e-2, "competitive_lambda": 1e-1}
 
 # Each variant may contain:
-#   config            — TrainConfig field overrides (batch_size, window_size, l1_lambda, ...)
-#   encoder_kwargs    — passed to SpikeEncoder (conv_out_channels, kernel_size, embedding_dim)
-#   gnn_kwargs        — passed to GraphNeuralNetwork (num_layers, hidden_dim, ...)
-#   downsample_scale  — multiplier on per-dataset baseline downsample_factor (default 1.0)
+#   config              — TrainConfig field overrides (batch_size, window_size, l1_lambda, ...)
+#   encoder_kwargs      — passed to SpikeEncoder (conv_out_channels, kernel_size, embedding_dim)
+#   gnn_kwargs          — passed to GraphNeuralNetwork (num_layers, hidden_dim, ...)
+#   downsample_override — {dataset: factor} map; dataset is skipped if not present in map
 
 VARIANTS = {
     # batch size
@@ -67,15 +67,18 @@ VARIANTS = {
     "layers_7":       {"config": dict(**_BASE_CFG),
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": {**_BASE_GNN, "num_layers": 7}},
 
-    # bin size (downsample_scale × per-dataset baseline)
-    # yuto   baseline = 20 → half=10 (5ms), 1x=20 (10ms), 2x=40 (20ms)
-    # arb    baseline = 10 → half=5  (5ms), 1x=10 (10ms), 2x=20 (20ms)
-    # pdcm   baseline =  2 → half=1  (1ms), 1x=2  (2ms),  2x=4  (4ms)
-    "bin_half":       {"config": dict(**_BASE_CFG), "downsample_scale": 0.5,
+    # bin size — absolute (yuto: 1 sample = 0.5 ms; pdcm/arbitrary: 1 sample = 1 ms)
+    "bin_1ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
+                       "downsample_override": {"yuto": 2, "pdcm": 1, "arbitrary": 1},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "bin_1x":         {"config": dict(**_BASE_CFG), "downsample_scale": 1.0,
+    "bin_2ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
+                       "downsample_override": {"yuto": 4, "pdcm": 2, "arbitrary": 2},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "bin_2x":         {"config": dict(**_BASE_CFG), "downsample_scale": 2.0,
+    "bin_5ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
+                       "downsample_override": {"yuto": 10, "pdcm": 5, "arbitrary": 5},
+                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
+    "bin_10ms":       {"config": dict(**_BASE_CFG),
+                       "downsample_override": {"yuto": 20, "pdcm": 10, "arbitrary": 10},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
 
     # window size
@@ -137,7 +140,7 @@ VARIANTS = {
     "comp_1":         {"config": {**_BASE_CFG, "competitive_lambda": 1.0},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
 
-    # ── self_scale in GNNLayer (balance between self vs. neighbour messages) ──
+    # self_scale in GNNLayer (balance between self vs. neighbour messages) ──
     "self_0":         {"config": dict(**_BASE_CFG),
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": {**_BASE_GNN, "self_scale": 0.0}},
     "self_0p1":       {"config": dict(**_BASE_CFG),
@@ -215,7 +218,6 @@ def make_criterion(spike_tensor: torch.Tensor, device) -> torch.nn.Module:
 
 
 def extract_adjacency(gnn: torch.nn.Module) -> np.ndarray:
-    """Model-agnostic: delegates to gnn.get_adjacency() then transposes to match .npy convention."""
     with torch.no_grad():
         return gnn.get_adjacency().cpu().numpy().T
 
@@ -246,10 +248,16 @@ def run_dataset_variant(
     output_dir = RESULTS_BASE / dataset_name / variant_name
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Apply bin-size scale: multiply the dataset's base downsample_factor
-    base_ds = dataset_cfg["loader_kwargs"]["downsample_factor"]
-    scale = variant_spec.get("downsample_scale", 1.0)
-    effective_ds = max(1, round(base_ds * scale))
+    # Resolve effective downsample_factor
+    if "downsample_override" in variant_spec:
+        override = variant_spec["downsample_override"]
+        if dataset_name not in override:
+            print(f"  Skipping {dataset_name} (not in downsample_override for this bin-size variant)")
+            return
+        effective_ds = override[dataset_name]
+    else:
+        base_ds = dataset_cfg["loader_kwargs"]["downsample_factor"]
+        effective_ds = max(1, round(base_ds * variant_spec.get("downsample_scale", 1.0)))
     loader_kwargs = {**dataset_cfg["loader_kwargs"], "downsample_factor": effective_ds}
 
     print(f"  Loading {dataset_name} data (downsample_factor={effective_ds})...")
@@ -275,7 +283,7 @@ def run_dataset_variant(
         config = TrainConfig(
             window_size=window_size,
             batch_size=vcfg.get("batch_size", 16),
-            num_epochs=dataset_cfg["num_epochs"],
+            num_epochs=vcfg.get("num_epochs", dataset_cfg["num_epochs"]),
             lr=vcfg.get("lr", 1e-4),
             l1_lambda=vcfg.get("l1_lambda", 5e-2),
             competitive_lambda=vcfg.get("competitive_lambda", 1e-1),

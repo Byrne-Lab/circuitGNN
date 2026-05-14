@@ -7,7 +7,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from .dataset import SpikeTrainDataset
-from .models import GraphNeuralNetwork, SpikeEncoder, DalesLawGNN
+from .models import GraphNeuralNetwork, SpikeEncoder
 
 
 @dataclass
@@ -73,13 +73,7 @@ def build_models(
     gnn_kwargs = gnn_kwargs or {}
 
     encoder = SpikeEncoder(window_size=window_size, **encoder_kwargs).to(device)
-
-    if model_type == "dales":
-        # DalesLawGNN doesn't accept A_init / signed_init
-        dales_kw = {k: v for k, v in gnn_kwargs.items() if k not in ("A_init", "signed_init")}
-        gnn = DalesLawGNN(num_neurons=num_neurons, **dales_kw).to(device)
-    else:
-        gnn = GraphNeuralNetwork(num_neurons=num_neurons, **gnn_kwargs).to(device)
+    gnn = GraphNeuralNetwork(num_neurons=num_neurons, **gnn_kwargs).to(device)
 
     return encoder, gnn
 

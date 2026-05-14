@@ -11,6 +11,27 @@ import infomeasure as im
 from statsmodels.tsa.vector_ar.var_model import VAR
 from joblib import Parallel, delayed
 
+# Coincidence Index from Ito et al. (2011)
+def calculate_coincidence_index(te_curve, coincidence_window=5):    
+    # CI = sum(M(t) for t in [tp - τ/2, tp + τ/2]) / sum(M(t) for t in [1, T])
+    
+    te_curve = np.asarray(te_curve, dtype=float)
+    
+    denominator = np.sum(te_curve) # entire lag window (1 to T)
+    if denominator == 0:
+        return 0.0
+
+    tp = int(np.argmax(te_curve)) # peak time
+    half = coincidence_window // 2
+
+    # Clamp window to valid indices
+    lower = max(0, tp - half)
+    upper = min(len(te_curve), tp + half + 1)
+
+    numerator = np.sum(te_curve[lower:upper])
+    return float(numerator / denominator)
+
+
 # From Young et al. 2021
 def partial_corr(X):
 
@@ -84,44 +105,51 @@ def H(prob):
 
 # correlation
 # https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.correlate.html
-def calculate_correlation(binned_spikes, max_lag = 1000):
+def calculate_correlation(binned_spikes, max_lag = 100):
     print('Calculating correlation...')
     num_channels, num_time = binned_spikes.shape
-    directed_correlation = np.zeros((num_channels, num_channels))
+    corr_curves = np.zeros((num_channels, num_channels, max_lag))
+
     for i in range(num_channels):
         for j in range(num_channels):
+            if i == j:
+                continue
             x = binned_spikes[i, :]
             y = binned_spikes[j, :]
-
             corr = scipy.signal.correlate(x - np.mean(x), y - np.mean(y), mode='full', method='fft')
-            corr = corr / (np.std(x) * np.std(y) * len (x)) # approxiation of energy normalization
-
+            corr = corr / (np.std(x) * np.std(y) * len(x))
             zero_lag = len(corr) // 2
-            Cij = corr[zero_lag : zero_lag + max_lag + 1]
-            Cji = corr[zero_lag - max_lag : zero_lag + 1]
-            Dij = Cij[np.argmax(np.abs(Cij))]
-            Dji = Cji[np.argmax(np.abs(Cji))]
+            corr_curves[i, j, :] = corr[zero_lag + 1 : zero_lag + max_lag + 1]
 
-            directed_correlation[i, j] = Dij
-            directed_correlation[j, i] = Dji
+    ci_matrix = np.zeros((num_channels, num_channels))
+    pk_matrix = np.zeros((num_channels, num_channels))
 
-    # conditional matrix
-    np.fill_diagonal(directed_correlation, 1)
-    inverted_matrix = -np.linalg.inv(directed_correlation) # precision matrix
+    for src in range(num_channels):
+        for tgt in range(num_channels):
+            if src == tgt:
+                continue
+            curve = corr_curves[src, tgt, :]
+            pk_matrix[src, tgt] = curve[np.argmax(np.abs(curve))]  # signed peak
+            ci_matrix[src, tgt] = calculate_coincidence_index(np.abs(curve))
+
+    # partial correlation on pk: condition each pair on all other channels
+    np.fill_diagonal(pk_matrix, 1)
+    inverted_matrix = -np.linalg.inv(pk_matrix)
     diag_sqrt = np.sqrt(np.abs(np.diag(inverted_matrix)))
-    directed_correlation = inverted_matrix / diag_sqrt[:, None] / diag_sqrt[None, :]  # normalize
-    np.fill_diagonal(directed_correlation, 0)
+    pk_matrix = inverted_matrix / diag_sqrt[:, None] / diag_sqrt[None, :]
+    np.fill_diagonal(pk_matrix, 0)
 
-    return directed_correlation
+    return ci_matrix, pk_matrix
 
 
 # mutual information
 def calculate_mutual_information(binned_spikes, max_lag = 100):
     print('Calculating mutual information...')
     num_channels, ntime = binned_spikes.shape
-    mutual_information = np.zeros((num_channels, num_channels, max_lag+1))
+    # mutual_information = np.zeros((num_channels, num_channels, max_lag+1))
+    mi_curves = np.zeros((num_channels, num_channels, max_lag))
 
-    for tau in range(max_lag+1):
+    for tau in range(1, max_lag+1):
         for i in range(num_channels):
             for j in range(num_channels):
                 if i == j:
@@ -134,19 +162,29 @@ def calculate_mutual_information(binned_spikes, max_lag = 100):
                     offset=tau, # lag
                 )
 
-                mutual_information[i, j, tau] = max(0, mi)
+                mi_curves[i, j, tau-1] = max(0, mi)
 
-    mutual_information_max = np.max(mutual_information, axis=2)
-    np.fill_diagonal(mutual_information_max, 0)
+    ci_matrix = np.zeros((num_channels, num_channels))
+    pk_matrix = np.zeros((num_channels, num_channels))
 
-    return mutual_information_max
+    for src in range(num_channels):
+        for tgt in range(num_channels):
+            if src == tgt:
+                continue
+
+            curve = mi_curves[src, tgt, :]
+            pk_matrix[src, tgt] = np.max(curve)
+            ci_matrix[src, tgt] = calculate_coincidence_index(curve)
+
+    return ci_matrix, pk_matrix
 
 
 # transfer entropy
 def calculate_transfer_entropy(binned_spikes, L=5, max_lag = 100):
     print('Calculating transfer entropy...')
     num_channels, ntime = binned_spikes.shape
-    transfer_entropy = np.zeros((num_channels, num_channels, max_lag+1))
+    te_curves = np.zeros((num_channels, num_channels, max_lag))
+
     for tau in range(1, max_lag+1):
         if tau % 2 == 0:
             print(f'Processing lag {tau}')
@@ -168,20 +206,29 @@ def calculate_transfer_entropy(binned_spikes, L=5, max_lag = 100):
                     dest_hist_len=L, # number of past observations
                 )
 
-                transfer_entropy[i, j, tau] = max(0, te)
+                te_curves[i, j, tau-1] = max(0, te)
 
-    transfer_entropy_max = np.max(transfer_entropy, axis=2)
-    np.fill_diagonal(transfer_entropy_max, 0)
+    ci_matrix = np.zeros((num_channels, num_channels))
+    pk_matrix = np.zeros((num_channels, num_channels))
 
-    return transfer_entropy_max
+    for src in range(num_channels):
+        for tgt in range(num_channels):
+            if src == tgt:
+                continue
 
+            curve = te_curves[src, tgt, :]
+            pk_matrix[src, tgt] = np.max(curve)
+            ci_matrix[src, tgt] = calculate_coincidence_index(curve)
+
+
+    return ci_matrix, pk_matrix
 
 # conditional transfer entropy
 def calculate_conditional_transfer_entropy(binned_spikes, pairwise_te, L=5):
     print('Calculating conditional transfer entropy...')
     num_channels, ntime = binned_spikes.shape
     conditional_transfer_entropy = np.zeros((num_channels, num_channels))
-
+    
     for i in range(num_channels):
         for j in range(num_channels):
             if i == j:
