@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:pmc.ncbi.nlm.nih.gov)",
+      "WebFetch(domain:www.neuralengine.org)",
+      "WebFetch(domain:arxiv.org)",
+      "WebFetch(domain:www.biorxiv.org)",
+      "WebFetch(domain:neuromat.numec.prp.usp.br)",
+      "WebFetch(domain:direct.mit.edu)"
+    ]
+  }
+}

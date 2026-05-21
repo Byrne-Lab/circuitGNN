@@ -27,7 +27,8 @@ os.chdir(str(REPO_ROOT))
 
 from circuit_gnn.data import load_yuto_network, load_pdcm_network, load_arbitrary_network
 from circuit_gnn.utils import (calculate_fit, align_matrices,
-                                get_consistent_connections, get_top_k, sign_inference)
+                                get_consistent_connections, get_top_k, sign_inference,
+                                plot_connectivity_matrix, plot_pdcm_matrix)
 
 RESULTS_BASE = VARIANTS_DIR / "results"
 
@@ -112,7 +113,15 @@ def main():
 
     # Load ground truth (plots suppressed by Agg backend)
     reg = DATASET_REGISTRY[args.dataset]
-    _, true_conn, _ = reg["loader"](**reg["loader_kwargs"])
+    _, true_conn, neuron_names = reg["loader"](**reg["loader_kwargs"])
+
+    if args.dataset == "pdcm":
+        pop_labels = np.load("datasets/pdcm/pop_labels.npy")
+        def do_plot(matrix, method_name, save_dir):
+            plot_pdcm_matrix(matrix, pop_labels, method_name=method_name, save_dir=save_dir)
+    else:
+        def do_plot(matrix, method_name, save_dir):
+            plot_connectivity_matrix(matrix, neuron_names=neuron_names, method_name=method_name, save_dir=save_dir, plot_val=True)
 
     rows = []
     for variant in args.variants:
@@ -128,6 +137,10 @@ def main():
                 "pearson_cons": "-", "f1_unsign_cons": "-", "f1_signed_cons": "-",
             })
             continue
+
+        variant_dir = RESULTS_BASE / args.dataset / variant
+        do_plot(mean_A, "mean", str(variant_dir))
+        do_plot(consistent_mean_A, "mean_consistent", str(variant_dir))
 
         cos, pear, spear, _, _, f1, _, _, sf1 = calculate_fit(true_conn, mean_A, plot=False)
         _, pear_c, _, _, _, f1_c, _, _, sf1_c = calculate_fit(true_conn, consistent_mean_A, plot=False)

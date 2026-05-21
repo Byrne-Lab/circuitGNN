@@ -29,28 +29,34 @@ def make_saturated_rdbu(cut=0.15):
     return LinearSegmentedColormap.from_list("RdBu_saturated", colors)
 
 
-def plot_connectivity_matrix(matrix, neuron_names, method_name='GNN', cmap=sns.diverging_palette(240, 10, as_cmap=True), save_dir='benchmarking_results', plot_val=True):
+def plot_connectivity_matrix(matrix, neuron_names, method_name='GNN', cmap=None, save_dir='benchmarking_results', plot_val=True):
     os.makedirs(save_dir, exist_ok=True)
-    vmin = min(matrix.min(), -1e-6)
-    vmax = max(matrix.max(),  1e-6)
-    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+
+    all_nonneg = matrix.min() >= 0
+    if all_nonneg:
+        plot_norm = plt.Normalize(vmin=0, vmax=max(matrix.max(), 1e-6))
+        plot_cmap = copy.copy(plt.cm.Greys) if cmap is None else copy.copy(cmap)
+    else:
+        vmin = min(matrix.min(), -1e-6)
+        vmax = max(matrix.max(),  1e-6)
+        plot_norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+        plot_cmap = copy.copy(sns.diverging_palette(240, 10, as_cmap=True)) if cmap is None else copy.copy(cmap)
 
     # Mask exact zeros so they render as white
-    cmap = copy.copy(cmap)          # avoid mutating the default argument
-    cmap.set_bad(color='white')
+    plot_cmap.set_bad(color='white')
     masked_matrix = np.ma.masked_where(matrix == 0, matrix)
 
     plt.figure(figsize=(10, 8))
     if plot_val:
         # Build annotation array: empty string where value is 0
-        annot_labels = np.where(matrix == 0, '', 
+        annot_labels = np.where(matrix == 0, '',
                                 np.vectorize(lambda v: f"{v:.3f}")(matrix))
         sns.heatmap(masked_matrix, xticklabels=neuron_names, yticklabels=neuron_names,
-                    cmap=cmap, norm=norm, cbar_kws={'label': 'Connectivity Strength'},
+                    cmap=plot_cmap, norm=plot_norm, cbar_kws={'label': 'Connectivity Strength'},
                     square=True, annot=annot_labels, fmt='')   # fmt='' because values are already strings
     else:
         sns.heatmap(masked_matrix, xticklabels=neuron_names, yticklabels=neuron_names,
-                    cmap=cmap, norm=norm, cbar_kws={'label': 'Connectivity Strength'},
+                    cmap=plot_cmap, norm=plot_norm, cbar_kws={'label': 'Connectivity Strength'},
                     square=True)
 
     plt.title(f"{method_name} Connectivity Matrix")

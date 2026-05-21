@@ -46,10 +46,9 @@ def make_dataloaders(
         dataset = SpikeTrainDataset(spike_data, window_size)
 
     total_len = len(dataset)
-    train_end = int(0.7 * total_len)
-    val_end = int(0.85 * total_len)
+    train_end = int(0.8 * total_len)
     train_set = torch.utils.data.Subset(dataset, range(0, train_end))
-    val_set = torch.utils.data.Subset(dataset, range(train_end, val_end))
+    val_set = torch.utils.data.Subset(dataset, range(train_end, total_len))
 
     val_loader = DataLoader(
         val_set, batch_size=batch_size, shuffle=False,

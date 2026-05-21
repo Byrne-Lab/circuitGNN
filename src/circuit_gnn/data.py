@@ -479,3 +479,243 @@ def load_v1_network(downsample_factor=2, gap=0, step=0):
     plt.savefig(f'{data_dir}/ground_truth.pdf', format='pdf')
 
     return binned_spikes, true_conn, neuron_names
+
+
+def isi_stats(binned_spikes, bin_size_ms):
+    """
+    Compute ISI distribution statistics from binned spike trains.
+
+    Parameters
+    ----------
+    binned_spikes : ndarray (n_neurons, n_timebins)
+        Spike counts per bin, as returned by any load_* function.
+    bin_size_ms : float
+        Actual bin duration in ms (e.g. downsample_factor for arbitrary/pdcm/v1,
+        or 0.5 * downsample_factor for yuto whose native resolution is 0.5 ms).
+
+    Returns
+    -------
+    pcts : ndarray (5,)
+        5th, 25th, 50th, 75th, 95th percentiles of the pooled ISI distribution in ms.
+    mean_rates_hz : ndarray (n_neurons,)
+        Mean firing rate per neuron in Hz.
+
+    Notes
+    -----
+    ISIs are estimated from bin indices of non-zero bins, so resolution is one bin.
+    If a bin holds >1 spike, sub-bin ISIs are unresolvable — use the finest
+    available bin size for the most accurate estimate.
+    """
+    n_neurons, n_timebins = binned_spikes.shape
+    duration_s = n_timebins * bin_size_ms / 1000.0
+
+    all_isis = []
+    mean_rates = np.zeros(n_neurons)
+
+    for i in range(n_neurons):
+        spike_bins = np.where(binned_spikes[i] > 0)[0]
+        mean_rates[i] = len(spike_bins) / duration_s
+        if len(spike_bins) >= 2:
+            all_isis.append(np.diff(spike_bins) * bin_size_ms)
+
+    if all_isis:
+        pooled = np.concatenate(all_isis)
+        pcts = np.percentile(pooled, [5, 25, 50, 75, 95])
+    else:
+        pcts = np.full(5, np.nan)
+
+    print(f"ISI percentiles (ms)  p5={pcts[0]:.1f}  p25={pcts[1]:.1f}  "
+          f"median={pcts[2]:.1f}  p75={pcts[3]:.1f}  p95={pcts[4]:.1f}")
+    print(f"Mean firing rate (Hz) min={mean_rates.min():.2f}  "
+          f"mean={mean_rates.mean():.2f}  max={mean_rates.max():.2f}")
+    print(f"Suggested minimum bin size (p5 ISI): {pcts[0]:.1f} ms")
+
+    return pcts, mean_rates
+
+
+def sparsity_stats(binned_spikes, bin_size_ms, candidate_bin_sizes_ms=None):
+    """
+    Compute mean spikes per bin at multiple candidate bin sizes.
+
+    Bins coarser than bin_size_ms are tested by re-summing; finer bins are
+    skipped (resolution already lost). A mean < 0.05 spikes/bin is flagged
+    as too sparse for reliable Conv1D learning.
+
+    Parameters
+    ----------
+    binned_spikes : ndarray (n_neurons, n_timebins)
+        Spike counts at bin_size_ms resolution, as returned by any load_* function.
+    bin_size_ms : float
+        Actual bin duration in ms of the input array.
+    candidate_bin_sizes_ms : list of float, optional
+        Bin sizes to evaluate. Defaults to [1, 2, 5, 10, 20].
+        Values smaller than bin_size_ms are reported as below current resolution.
+
+    Returns
+    -------
+    results : dict mapping bin_size_ms -> mean_spikes_per_bin
+    """
+    if candidate_bin_sizes_ms is None:
+        candidate_bin_sizes_ms = [1, 2, 5, 10, 20]
+
+    n_neurons, n_timebins = binned_spikes.shape
+    results = {}
+
+    print(f"\n{'Bin (ms)':>10}  {'Mean spikes/bin':>16}  {'Too sparse?':>11}")
+    print("-" * 42)
+
+    for target_ms in sorted(candidate_bin_sizes_ms):
+        if target_ms < bin_size_ms:
+            print(f"{target_ms:>10.1f}  {'< current resolution':>27}")
+            continue
+        factor = int(round(target_ms / bin_size_ms))
+        trimmed = binned_spikes[:, :n_timebins // factor * factor]
+        rebinned = trimmed.reshape(n_neurons, -1, factor).sum(2)
+        mean_val = float(rebinned.mean())
+        results[target_ms] = mean_val
+        flag = "yes" if mean_val < 0.05 else "no"
+        print(f"{target_ms:>10.1f}  {mean_val:>16.4f}  {flag:>11}")
+
+    return results
+
+def suggest_bin_widths(
+    binned_spikes_native,
+    native_bin_ms,
+    dataset_name="",
+    candidate_bin_sizes_ms=None,
+    min_mean_spb=0.02,
+    max_multi_frac=0.05,
+):
+    """
+    For spike trains at their finest available resolution, evaluate candidate bin widths
+    and recommend the finest that satisfies both data-density and clamping-validity criteria.
+
+    Parameters
+    ----------
+    binned_spikes_native : ndarray (n_neurons, n_timebins)
+        Spike counts at native resolution (finest available).
+    native_bin_ms : float
+        Duration of each timebin in ms.
+    dataset_name : str
+        Label printed in the output header.
+    candidate_bin_sizes_ms : list of float, optional
+        Bin widths to evaluate. Defaults to [0.5, 1, 2, 5, 10, 20, 50].
+    min_mean_spb : float
+        Hard lower bound on mean spikes/bin (sparsity floor for Conv1D learnability).
+    max_multi_frac : float
+        Hard upper bound on the fraction of bins containing >1 spike (clamping validity).
+
+    Returns
+    -------
+    dict with keys:
+        recommended_bin_ms : float or None
+        rows : list of dicts (one per candidate Δ)
+        p5_isi_ms : float
+        median_isi_ms : float
+    """
+    if candidate_bin_sizes_ms is None:
+        candidate_bin_sizes_ms = [0.5, 1, 2, 5, 10, 20, 50]
+
+    n_neurons, n_timebins = binned_spikes_native.shape
+
+    # ISI stats at native resolution
+    pcts, mean_rates = isi_stats(binned_spikes_native, native_bin_ms)
+    p5_isi_ms, median_isi_ms = float(pcts[0]), float(pcts[2])
+
+    label = f" [{dataset_name}]" if dataset_name else ""
+    print(f"\nBin-width analysis{label}")
+    print(f"  Native resolution : {native_bin_ms} ms/bin")
+    print(f"  p5 ISI            : {p5_isi_ms:.1f} ms   (finest bin preserving spike timing)")
+    print(f"  Median ISI        : {median_isi_ms:.1f} ms")
+    print(f"  Mean firing rate  : {mean_rates.mean():.2f} Hz  "
+          f"(range {mean_rates.min():.2f}–{mean_rates.max():.2f} Hz)")
+    print(f"\n  Criteria: mean_spb ≥ {min_mean_spb}  AND  multi_frac ≤ {max_multi_frac:.0%}\n")
+
+    header = (f"{'Δ (ms)':>8}  {'mean_spb':>10}  {'multi_frac':>12}  "
+              f"{'zero_frac':>10}  {'C_ss':>12}  {'isi_ok':>7}  {'density_ok':>10}  "
+              f"{'clamp_ok':>8}  {'status':>10}")
+    print(header)
+    print("-" * len(header))
+
+    rows = []
+    recommended_bin_ms = None
+
+    for delta in sorted(candidate_bin_sizes_ms):
+        if delta < native_bin_ms:
+            print(f"{'':>8}  {delta:>8.1f} ms — below native resolution, skipped")
+            continue
+
+        factor = int(round(delta / native_bin_ms))
+        trim = n_timebins // factor * factor
+        rebinned = binned_spikes_native[:, :trim].reshape(n_neurons, -1, factor).sum(-1)
+
+        mu = float(rebinned.mean())
+        var = float(rebinned.var())
+        multi_frac = float((rebinned > 1).mean())
+        zero_frac  = float((rebinned == 0).mean())
+
+        # Shimazaki-Shinomoto MISE cost (reference; lower = better for rate estimation)
+        c_ss = (2 * mu - var) / (delta ** 2) if delta > 0 else np.nan
+
+        valid_density = mu >= min_mean_spb
+        valid_clamp   = multi_frac <= max_multi_frac
+        valid_isi     = delta <= p5_isi_ms
+
+        if valid_density and valid_clamp and recommended_bin_ms is None:
+            recommended_bin_ms = delta
+            status = "<<< RECOMMENDED"
+        elif valid_density and valid_clamp:
+            status = "valid"
+        elif not valid_density:
+            status = "TOO SPARSE"
+        elif not valid_clamp:
+            status = "MULTI-SPIKE"
+        else:
+            status = "both fail"
+
+        isi_mark     = "ok" if valid_isi     else "FAIL"
+        density_mark = "ok" if valid_density else "FAIL"
+        clamp_mark   = "ok" if valid_clamp   else "FAIL"
+
+        print(f"{delta:>8.1f}  {mu:>10.4f}  {multi_frac:>12.4f}  "
+              f"{zero_frac:>10.4f}  {c_ss:>12.4f}  {isi_mark:>7}  "
+              f"{density_mark:>10}  {clamp_mark:>8}  {status}")
+
+        rows.append(dict(delta_ms=delta, mean_spb=mu, multi_frac=multi_frac,
+                         zero_frac=zero_frac, C_ss=c_ss,
+                         valid_density=valid_density, valid_clamp=valid_clamp,
+                         valid_isi=valid_isi))
+
+    print()
+    if recommended_bin_ms is not None:
+        print(f"  => Recommended bin: {recommended_bin_ms} ms  "
+              f"(finest where mean_spb ≥ {min_mean_spb} AND multi_frac ≤ {max_multi_frac:.0%})")
+        if recommended_bin_ms > p5_isi_ms:
+            print(f"     WARNING: recommended bin ({recommended_bin_ms} ms) > p5 ISI ({p5_isi_ms:.1f} ms) "
+                  f"— some monosynaptic latencies may be unresolvable at this resolution.")
+    else:
+        print(f"  => No candidate satisfies both criteria simultaneously.")
+        print(f"     Consider recording longer data (improves density at fine bins) "
+              f"or accepting a higher multi_frac threshold.")
+
+    return dict(recommended_bin_ms=recommended_bin_ms, rows=rows,
+                p5_isi_ms=p5_isi_ms, median_isi_ms=median_isi_ms)
+
+"""
+if __name__ == "__main__":
+    import matplotlib
+    matplotlib.use("Agg")
+
+    datasets = [
+        ("arbitrary", load_arbitrary_network, {"downsample_factor": 1}, 1.0),
+        ("yuto",      load_yuto_network,      {"downsample_factor": 2}, 0.5),
+        ("pdcm",      load_pdcm_network,      {"downsample_factor": 1}, 1.0),
+        ("v1",        load_v1_network,         {"downsample_factor": 1}, 1.0),
+    ]
+
+    for name, loader, kwargs, native_ms in datasets:
+        print(f"\n{'='*60}")
+        print(f"Dataset: {name}")
+        print(f"{'='*60}")
+        spikes, _, _ = loader(**kwargs)
+        suggest_bin_widths(spikes, native_ms, dataset_name=name)"""
