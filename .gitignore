@@ -3,3 +3,4 @@ results/
 __pycache__/
 archive/
 datasets/
+results_old/

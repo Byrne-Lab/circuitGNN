@@ -24,7 +24,7 @@ REPO_ROOT = VARIANTS_DIR.parent
 sys.path.insert(0, str(VARIANTS_DIR))
 os.chdir(str(REPO_ROOT))
 
-from circuit_gnn.data import load_yuto_network, load_pdcm_network, load_arbitrary_network
+from circuit_gnn.data import load_yuto_network, load_pdcm_network, load_arbitrary_network, load_small_circuit_A_network, load_small_circuit_B_network
 from circuit_gnn.train import TrainConfig, train_model, load_checkpoint
 from circuit_gnn.utils import plot_connectivity_matrix, plot_pdcm_matrix
 
@@ -69,16 +69,16 @@ VARIANTS = {
 
     # bin size — absolute (yuto: 1 sample = 0.5 ms; pdcm/arbitrary: 1 sample = 1 ms)
     "bin_1ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 2, "pdcm": 1, "arbitrary": 1},
+                       "downsample_override": {"yuto": 2, "pdcm": 1, "arbitrary": 1, "small_circuit_A": 2, "small_circuit_B": 2},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
     "bin_2ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 4, "pdcm": 2, "arbitrary": 2},
+                       "downsample_override": {"yuto": 4, "pdcm": 2, "arbitrary": 2, "small_circuit_A": 4, "small_circuit_B": 4},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
     "bin_5ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 10, "pdcm": 5, "arbitrary": 5},
+                       "downsample_override": {"yuto": 10, "pdcm": 5, "arbitrary": 5, "small_circuit_A": 10, "small_circuit_B": 10},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
     "bin_10ms":       {"config": dict(**_BASE_CFG),
-                       "downsample_override": {"yuto": 20, "pdcm": 10, "arbitrary": 10},
+                       "downsample_override": {"yuto": 20, "pdcm": 10, "arbitrary": 10, "small_circuit_A": 20, "small_circuit_B": 20},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
 
     # window size
@@ -126,8 +126,6 @@ VARIANTS = {
     "l1_5e-2":        {"config": dict(**_BASE_CFG),
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
     "l1_1e-1":        {"config": {**_BASE_CFG, "l1_lambda": 1e-1},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "l1_1":           {"config": {**_BASE_CFG, "l1_lambda": 1.0},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
 
     # competitive lambda (exc/inh separation)
@@ -183,6 +181,84 @@ VARIANTS = {
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
     "lr_5e-4":        {"config": {**_BASE_CFG, "lr": 5e-4},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
+    
+    # encoder conv channels and kernel size
+    # kernel size 2
+    "kernel_2_channels_8": {"config": dict(**_BASE_CFG),
+                            "encoder_kwargs": {**_BASE_ENC, "kernel_size": 2, "conv_out_channels": 8}, "gnn_kwargs": dict(**_BASE_GNN)},
+    "kernel_2_channels_16": {"config": dict(**_BASE_CFG),
+                            "encoder_kwargs": {**_BASE_ENC, "kernel_size": 2, "conv_out_channels": 16}, "gnn_kwargs": dict(**_BASE_GNN)}, 
+    "kernel_2_channels_32": {"config": dict(**_BASE_CFG),
+                            "encoder_kwargs": {**_BASE_ENC, "kernel_size": 2, "conv_out_channels": 32}, "gnn_kwargs": dict(**_BASE_GNN)}, 
+    "kernel_2_channels_64": {"config": dict(**_BASE_CFG),
+                            "encoder_kwargs": {**_BASE_ENC, "kernel_size": 2, "conv_out_channels": 64}, "gnn_kwargs": dict(**_BASE_GNN)}, 
+
+
+    # kernel size 3
+    "kernel_3_channels_8": {"config": dict(**_BASE_CFG),
+                            "encoder_kwargs": {**_BASE_ENC, "kernel_size": 3, "conv_out_channels": 8}, "gnn_kwargs": dict(**_BASE_GNN)},
+    "kernel_3_channels_16": {"config": dict(**_BASE_CFG),
+                            "encoder_kwargs": {**_BASE_ENC, "kernel_size": 3, "conv_out_channels": 16}, "gnn_kwargs": dict(**_BASE_GNN)}, 
+    "kernel_3_channels_32": {"config": dict(**_BASE_CFG),
+                            "encoder_kwargs": {**_BASE_ENC, "kernel_size": 3, "conv_out_channels": 32}, "gnn_kwargs": dict(**_BASE_GNN)}, 
+    "kernel_3_channels_64": {"config": dict(**_BASE_CFG),
+                             "encoder_kwargs": {**_BASE_ENC, "kernel_size": 3, "conv_out_channels": 64}, "gnn_kwargs": dict(**_BASE_GNN)},
+
+
+    # kernel size 4
+    "kernel_4_channels_8": {"config": dict(**_BASE_CFG),
+                            "encoder_kwargs": {**_BASE_ENC, "kernel_size": 4, "conv_out_channels": 8}, "gnn_kwargs": dict(**_BASE_GNN)},
+    "kernel_4_channels_16": {"config": dict(**_BASE_CFG),
+                            "encoder_kwargs": {**_BASE_ENC, "kernel_size": 4, "conv_out_channels": 16},  "gnn_kwargs": dict(**_BASE_GNN)}, 
+    "kernel_4_channels_32": {"config": dict(**_BASE_CFG),
+                            "encoder_kwargs": {**_BASE_ENC, "kernel_size": 4, "conv_out_channels": 32},  "gnn_kwargs": dict(**_BASE_GNN)}, 
+    "kernel_4_channels_64": {"config": dict(**_BASE_CFG),
+                            "encoder_kwargs": {**_BASE_ENC, "kernel_size": 4, "conv_out_channels": 64}, "gnn_kwargs": dict(**_BASE_GNN)},
+
+
+    # embedding dim and hidden dim
+    # embedding dim 16
+    "emb_16_hidden_16": {"config": dict(**_BASE_CFG),
+                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 16}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 16, "hidden_dim": 16}},
+    "emb_16_hidden_32": {"config": dict(**_BASE_CFG), 
+                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 16}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 16, "hidden_dim": 32}}, 
+    "emb_16_hidden_64": {"config": dict(**_BASE_CFG), 
+                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 16}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 16, "hidden_dim": 64}},
+    "emb_16_hidden_128": {"config": dict(**_BASE_CFG), 
+                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 16}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 16, "hidden_dim": 128}},
+
+
+    # embedding dim 32
+    "emb_32_hidden_16": {"config": dict(**_BASE_CFG), 
+                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 32}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 32, "hidden_dim": 16}}, 
+    "emb_32_hidden_32": {"config": dict(**_BASE_CFG), 
+                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 32}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 32, "hidden_dim": 32}}, 
+    "emb_32_hidden_64": {"config": dict(**_BASE_CFG), 
+                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 32}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 32, "hidden_dim": 64}},
+    "emb_32_hidden_128": {"config": dict(**_BASE_CFG), 
+                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 32}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 32, "hidden_dim": 128}},
+
+
+    # embedding dim 64
+    "emb_64_hidden_16": {"config": dict(**_BASE_CFG), 
+                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 64}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 64, "hidden_dim": 16}}, 
+    "emb_64_hidden_32": {"config": dict(**_BASE_CFG), 
+                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 64}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 64, "hidden_dim": 32}}, 
+    "emb_64_hidden_64": {"config": dict(**_BASE_CFG), 
+                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 64}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 64, "hidden_dim": 64}}, 
+    "emb_64_hidden_128": {"config": dict(**_BASE_CFG), 
+                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 64}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 64, "hidden_dim": 128}}, 
+
+
+    # embedding dim 128
+    "emb_128_hidden_16": {"config": dict(**_BASE_CFG), 
+                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 128}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 128, "hidden_dim": 16}}, 
+    "emb_128_hidden_32": {"config": dict(**_BASE_CFG), 
+                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 128}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 128, "hidden_dim": 32}},
+    "emb_128_hidden_64": {"config": dict(**_BASE_CFG), 
+                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 128}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 128, "hidden_dim": 64}},
+    "emb_128_hidden_128": {"config": dict(**_BASE_CFG), 
+                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 128}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 128, "hidden_dim": 128}},
 }
 
 # dataset registry
@@ -203,6 +279,18 @@ DATASET_REGISTRY = {
         "loader": load_pdcm_network,
         "loader_kwargs": {"downsample_factor": 2},
         "num_epochs": 50,
+        "default_window": 100,
+    },
+    "small_circuit_A": {
+        "loader": load_small_circuit_A_network,
+        "loader_kwargs": {"downsample_factor": 20},
+        "num_epochs": 20,
+        "default_window": 100,
+    },
+    "small_circuit_B": {
+        "loader": load_small_circuit_B_network,
+        "loader_kwargs": {"downsample_factor": 20},
+        "num_epochs": 20,
         "default_window": 100,
     },
 }
