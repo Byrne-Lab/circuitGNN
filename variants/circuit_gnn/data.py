@@ -11,11 +11,29 @@ import warnings
 warnings.filterwarnings("ignore")
 
 def load_arbitrary_network(downsample_factor = 10, gap=-1, step=-1):
-    # gap is irrelevant for this dataset
-    # downsample_factor: 10 -> 10 ms bins
-    # 1 ms bins
-    # 2000 s total
-    # 11 neurons
+    """
+    Load the arbitrary SNNAP simulation dataset.
+
+    Parameters
+    ----------
+    downsample_factor : int
+        Bin size in ms (e.g. 10 -> 10 ms bins). Native resolution is 1 ms.
+    gap : ignored
+        Kept for API compatibility with other loaders.
+    step : ignored
+        Kept for API compatibility with other loaders.
+
+    Returns
+    -------
+    binned_spikes : ndarray (11, n_timebins)
+        Spike counts per bin. Voltages thresholded at -10 mV with an 8-sample
+        refractory period; limited to first 300 s of simulation.
+    true_conn : ndarray (11, 11)
+        Signed synaptic weight matrix [pre, post].
+        Positive = excitatory, negative = inhibitory, 0 = no connection.
+    neuron_names : ndarray of int
+        Integer index 0–10 for each neuron.
+    """
 
     data_loc = 'datasets/arbitrary/spikes.out'
     time_max    = 300 # limit to 300 s
@@ -71,6 +89,20 @@ def load_arbitrary_network(downsample_factor = 10, gap=-1, step=-1):
     true_conn[3,10] = 1
 
     neuron_names = np.arange(num_neurons)
+
+    bin_size_s = 1e-3 * downsample_factor
+    spike_times = [np.where(binned_spikes[i] > 0)[0] * bin_size_s for i in range(num_neurons)]
+    plt.figure(figsize=(10, 5))
+    plt.eventplot(spike_times, orientation='horizontal', linelengths=0.8, color='black')
+    plt.yticks(range(num_neurons), neuron_names)
+    plt.gca().invert_yaxis()
+    plt.xlabel('Time (s)')
+    plt.ylabel('Neuron')
+    plt.title('Spike Raster')
+    plt.tight_layout()
+    plt.savefig("datasets/arbitrary/raster_plot.pdf", format='pdf')
+    plt.close()
+
     cmap = sns.diverging_palette(240, 10, as_cmap=True)
     vmin = min(true_conn.min(), -1e-6)
     vmax = max(true_conn.max(),  1e-6)
@@ -96,10 +128,32 @@ def load_arbitrary_network(downsample_factor = 10, gap=-1, step=-1):
 
 
 def load_yuto_network(downsample_factor = 20, gap=0.20, step=1):
-    # downsample_factor: 20 -> 10 ms bins, 10 -> 5 ms bins
-    # 0.5 ms bins
-    # 240 s total
-    # 14 neurons
+    """
+    Load the Yuto compartmental neuron simulation dataset.
+
+    Parameters
+    ----------
+    downsample_factor : int
+        Bin size in ms (e.g. 20 -> 10 ms bins, 10 -> 5 ms bins).
+        Native resolution is 0.5 ms.
+    gap : float
+        Synaptic gap/delay used to select the ground-truth connectivity file
+        (e.g. 0.20 loads ``true_connectivity_0.20.npy``).
+    step : {1, 2}
+        1 for direct (monosynaptic) connections, 2 for 1-hop (disynaptic)
+        connections. Selects between the two connectivity .npy files.
+
+    Returns
+    -------
+    binned_spikes : ndarray (14, n_timebins)
+        Spike counts per bin. Voltages thresholded at -10 mV with a 15-sample
+        refractory period; 240 s total simulation.
+    true_conn : ndarray (14, 14)
+        Signed synaptic weight matrix [pre, post] in mV.
+        Positive = excitatory, negative = inhibitory, 0 = no connection.
+    neuron_names : list of str
+        Neuron label for each neuron parsed from ``spikes.head``.
+    """
 
     data_loc = 'datasets/yuto/spikes.out'
     with open('datasets/yuto/spikes.head') as f:
@@ -180,6 +234,206 @@ def load_yuto_network(downsample_factor = 20, gap=0.20, step=1):
 
     return binned_spikes, true_conn, neuron_names
 
+
+def load_small_circuit_A_network(downsample_factor = 20, gap=0.20, step=1):
+    """
+    Load the small circuit A simulation dataset froM Cai et al.
+
+    Parameters
+    ----------
+    downsample_factor : int
+        Bin size in ms (e.g. 20 -> 10 ms bins, 10 -> 5 ms bins).
+        Native resolution is 0.5 ms.
+
+    Returns
+    -------
+    binned_spikes : ndarray (3, n_timebins)
+        Spike counts per bin. Voltages thresholded at -10 mV with a 15-sample
+        refractory period; 200 s total simulation.
+    true_conn : ndarray (3, 3)
+        Signed synaptic weight matrix [pre, post].
+        Positive = excitatory, negative = inhibitory, 0 = no connection.
+    neuron_names : list of str
+        Neuron label for each neuron parsed from ``spikes.head``.
+    """
+
+    data_loc = 'datasets/small_circuit_A/spikes.out'
+    with open('datasets/small_circuit_A/spikes.head') as f:
+        neuron_names = [line.split('[')[1].split('.')[0] for line in f if line.startswith('V[')]
+    
+    # Load true connectivity
+    true_conn = np.zeros((3,3))
+    true_conn[0,1] = -1
+    true_conn[0,2] = 1
+
+    cmap = sns.diverging_palette(240, 10, as_cmap=True)
+    norm = TwoSlopeNorm(vmin=-5, vcenter=0, vmax=2)
+
+    # build annotation array: value if nonzero, else empty string
+    annot_str = [[f'{v:.3f}' if v != 0 else '' for v in row] for row in true_conn]
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(true_conn, xticklabels=neuron_names, yticklabels=neuron_names,
+                cmap=cmap, norm=norm,
+                annot=annot_str, fmt='',
+                cbar_kws={'label': 'Connection Strength (mV)'},
+                square=True)
+    plt.title('True Connectivity')
+    plt.xlabel('Postsynaptic')
+    plt.ylabel('Presynaptic')
+    plt.tight_layout()
+    plt.savefig("datasets/small_circuit_A/ground_truth.pdf", format='pdf')
+    plt.close()
+    
+    df = pd.read_csv(data_loc, sep='\t', header=None, skipinitialspace=True)
+    voltage_data = df.iloc[:, 1:-1]
+    voltage_array_original = voltage_data.values
+    neuron_voltage_array = voltage_array_original.T
+
+    # convert voltages to spikes
+    thr = -10   # mv > thr
+    ra  = 15    # refractory period in samples
+
+    n_neurons, n_timepoints = neuron_voltage_array.shape
+    binned_spikes = np.zeros((n_neurons, n_timepoints), dtype=int)
+
+    for i in range(n_neurons):
+        mv = neuron_voltage_array[i]
+        sp = np.where(mv > thr)[0]                             # sp = find(mv > thr)
+        if sp.size > 0:
+            mask = np.concatenate(([True], np.diff(sp) > ra))  # sp([1; diff(sp)>ra])
+            sp = sp[mask]
+            binned_spikes[i, sp] = 1
+
+    print(binned_spikes.shape)
+
+    # downsample
+    binned_spikes = binned_spikes[:, :binned_spikes.shape[1] // downsample_factor * downsample_factor]
+    binned_spikes = binned_spikes.reshape(binned_spikes.shape[0], -1, downsample_factor).sum(2)
+    print(binned_spikes.shape)
+    print("Binned spikes possibilities:", np.unique(binned_spikes))
+
+    # plot
+    bin_size_s = 0.5e-3 * downsample_factor
+    spike_times = []
+    for i in range(binned_spikes.shape[0]):
+        times = np.where(binned_spikes[i, :] > 0)[0] * bin_size_s
+        spike_times.append(times)
+
+    plt.figure(figsize=(10, 5))
+    plt.eventplot(spike_times, orientation='horizontal', linelengths=0.8, color='black')
+    plt.yticks(range(len(neuron_names)), neuron_names)
+    plt.gca().invert_yaxis()
+    plt.xlabel('Time (s)')
+    plt.ylabel('Neuron')
+    plt.title('Spike Raster')
+    plt.tight_layout()
+    plt.savefig("datasets/small_circuit_A/raster_plot.pdf", format='pdf')
+    plt.close()
+
+    return binned_spikes, true_conn, neuron_names
+
+
+def load_small_circuit_B_network(downsample_factor = 20, gap=0.20, step=1):
+    """
+    Load the small circuit B simulation dataset froM Cai et al.
+
+    Parameters
+    ----------
+    downsample_factor : int
+        Bin size in ms (e.g. 20 -> 10 ms bins, 10 -> 5 ms bins).
+        Native resolution is 0.5 ms.
+
+    Returns
+    -------
+    binned_spikes : ndarray (3, n_timebins)
+        Spike counts per bin. Voltages thresholded at -10 mV with a 15-sample
+        refractory period; 200 s total simulation.
+    true_conn : ndarray (3, 3)
+        Signed synaptic weight matrix [pre, post].
+        Positive = excitatory, negative = inhibitory, 0 = no connection.
+    neuron_names : list of str
+        Neuron label for each neuron parsed from ``spikes.head``.
+    """
+
+    data_loc = 'datasets/small_circuit_B/spikes.out'
+    with open('datasets/small_circuit_B/spikes.head') as f:
+        neuron_names = [line.split('[')[1].split('.')[0] for line in f if line.startswith('V[')]
+    
+    # Load true connectivity
+    true_conn = np.zeros((3,3))
+    true_conn[0,1] = 0.75
+    true_conn[0,2] = 0.75
+    true_conn[2,1] = 1
+
+    cmap = sns.diverging_palette(240, 10, as_cmap=True)
+    norm = TwoSlopeNorm(vmin=-5, vcenter=0, vmax=2)
+
+    # build annotation array: value if nonzero, else empty string
+    annot_str = [[f'{v:.3f}' if v != 0 else '' for v in row] for row in true_conn]
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(true_conn, xticklabels=neuron_names, yticklabels=neuron_names,
+                cmap=cmap, norm=norm,
+                annot=annot_str, fmt='',
+                cbar_kws={'label': 'Connection Strength (mV)'},
+                square=True)
+    plt.title('True Connectivity')
+    plt.xlabel('Postsynaptic')
+    plt.ylabel('Presynaptic')
+    plt.tight_layout()
+    plt.savefig("datasets/small_circuit_B/ground_truth.pdf", format='pdf')
+    plt.close()
+    
+    df = pd.read_csv(data_loc, sep='\t', header=None, skipinitialspace=True)
+    voltage_data = df.iloc[:, 1:-1]
+    voltage_array_original = voltage_data.values
+    neuron_voltage_array = voltage_array_original.T
+
+    # convert voltages to spikes
+    thr = -10   # mv > thr
+    ra  = 15    # refractory period in samples
+
+    n_neurons, n_timepoints = neuron_voltage_array.shape
+    binned_spikes = np.zeros((n_neurons, n_timepoints), dtype=int)
+
+    for i in range(n_neurons):
+        mv = neuron_voltage_array[i]
+        sp = np.where(mv > thr)[0]                             # sp = find(mv > thr)
+        if sp.size > 0:
+            mask = np.concatenate(([True], np.diff(sp) > ra))  # sp([1; diff(sp)>ra])
+            sp = sp[mask]
+            binned_spikes[i, sp] = 1
+
+    print(binned_spikes.shape)
+
+    # downsample
+    binned_spikes = binned_spikes[:, :binned_spikes.shape[1] // downsample_factor * downsample_factor]
+    binned_spikes = binned_spikes.reshape(binned_spikes.shape[0], -1, downsample_factor).sum(2)
+    print(binned_spikes.shape)
+    print("Binned spikes possibilities:", np.unique(binned_spikes))
+
+    # plot
+    bin_size_s = 0.5e-3 * downsample_factor
+    spike_times = []
+    for i in range(binned_spikes.shape[0]):
+        times = np.where(binned_spikes[i, :] > 0)[0] * bin_size_s
+        spike_times.append(times)
+
+    plt.figure(figsize=(10, 5))
+    plt.eventplot(spike_times, orientation='horizontal', linelengths=0.8, color='black')
+    plt.yticks(range(len(neuron_names)), neuron_names)
+    plt.gca().invert_yaxis()
+    plt.xlabel('Time (s)')
+    plt.ylabel('Neuron')
+    plt.title('Spike Raster')
+    plt.tight_layout()
+    plt.savefig("datasets/small_circuit_B/raster_plot.pdf", format='pdf')
+    plt.close()
+
+    return binned_spikes, true_conn, neuron_names
+
+
 def load_pdcm_network(downsample_factor=2, gap=0, step=0):
     """
     Load the PDCM NetPyNE simulation dataset.
@@ -188,7 +442,7 @@ def load_pdcm_network(downsample_factor=2, gap=0, step=0):
     ----------
     downsample_factor : int
         Bin size in ms (e.g. 10 -> 10 ms bins)
-\    gap : ignored
+    gap : ignored
         Kept for API compatibility with other loaders.
 
     Returns
@@ -233,7 +487,7 @@ def load_pdcm_network(downsample_factor=2, gap=0, step=0):
     plt.ylabel('Neuron Index')
     plt.title('Spike Raster')
     plt.tight_layout()
-    # plt.show()
+    plt.savefig(f'{data_dir}/raster_plot.pdf', format='pdf')
     plt.close()
 
     # Plot ground truth connectivity
@@ -383,7 +637,6 @@ def load_v1_network(downsample_factor=2, gap=0, step=0):
     plt.title(f'V1 Spike Raster  ({n_neurons} neurons, bin={downsample_factor} ms)')
     plt.tight_layout()
     plt.savefig(f'{data_dir}/raster.pdf', format='pdf')
-    plt.show()
 
     # Connectivity heatmap
 
@@ -424,6 +677,5 @@ def load_v1_network(downsample_factor=2, gap=0, step=0):
     plt.ylabel('Presynaptic (source)')
     plt.tight_layout()
     plt.savefig(f'{data_dir}/ground_truth.pdf', format='pdf')
-    plt.show()
 
     return binned_spikes, true_conn, neuron_names
