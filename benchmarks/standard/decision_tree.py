@@ -132,7 +132,7 @@ def calculate_variable_importance_matrix(binned_spikes, window_bins=50, subinter
     n_sub = window_bins // subinterval_bins
 
     for target_idx in range(num_channels):
-        if target_idx % 2 == 0:
+        if target_idx % 5 == 0:
             print(f'  target {target_idx}/{num_channels}')
         X, y, feature_names, source_indices = prepare_intervals(binned_spikes, target_idx, window_bins=window_bins, subinterval_bins=subinterval_bins)
         if np.sum(y == 1) < 5:

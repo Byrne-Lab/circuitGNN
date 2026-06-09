@@ -1,6 +1,4 @@
 # Pozo-Jimenez et al. (2021): decision-tree connectivity benchmark.
-# Produces individual-MCC matrix and variable-importance matrix,
-# analogous to pk/ci matrices from run_information_theory.py.
 
 import sys
 from pathlib import Path
@@ -25,7 +23,7 @@ data_map = {
 
 for data in ['yuto', 'arbitrary', 'pdcm']:
 
-    # 1 ms bins following Ito et al. 2011
+    # 1 ms bins to accurately get spike times
     if data == 'yuto':
         downsample_factor = 2  # 1 ms
     elif data == 'arbitrary':
@@ -33,9 +31,9 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
     elif data == 'pdcm':
         downsample_factor = 1  # 1 ms
 
-    window_bins = 50        # 50 ms look-back window
-    subinterval_bins = 10   # 10 ms subintervals → labels A–E
-    n_runs = 30             # random-seed repetitions (paper uses 30)
+    window_bins = 50        # 50 ms history
+    subinterval_bins = 10   # 10 ms subintervals
+    n_runs = 30             # random-seed repetitions
 
     save_dir = f"datasets/{data}/init"
     os.makedirs(save_dir, exist_ok=True)
@@ -46,32 +44,16 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
 
     # Individual MCC matrix (one model per source–target pair)
     start = time.time()
-    mcc_matrix = calculate_mcc_matrix(
-        binned_spikes,
-        window_bins=window_bins,
-        subinterval_bins=subinterval_bins,
-        n_runs=n_runs,
-    )
+    mcc_matrix = calculate_mcc_matrix(binned_spikes, window_bins=window_bins, subinterval_bins=subinterval_bins, n_runs=n_runs)
     print(f"MCC matrix time: {(time.time() - start) / 60:.2f} min")
 
     np.save(f"{save_dir}/decision_tree_mcc.npy", mcc_matrix)
-    plot_connectivity_matrix(
-        mcc_matrix, neuron_names,
-        "Decision Tree MCC", save_dir=save_dir, plot_val=False,
-    )
+    plot_connectivity_matrix(mcc_matrix, neuron_names, "Decision Tree MCC", save_dir=save_dir, plot_val=False,)
 
     # Variable importance matrix (full model per target)
     start = time.time()
-    vi_matrix = calculate_variable_importance_matrix(
-        binned_spikes,
-        window_bins=window_bins,
-        subinterval_bins=subinterval_bins,
-        n_runs=n_runs,
-    )
+    vi_matrix = calculate_variable_importance_matrix(binned_spikes, window_bins=window_bins, subinterval_bins=subinterval_bins, n_runs=n_runs)
     print(f"Variable importance matrix time: {(time.time() - start) / 60:.2f} min")
 
     np.save(f"{save_dir}/decision_tree_vi.npy", vi_matrix)
-    plot_connectivity_matrix(
-        vi_matrix, neuron_names,
-        "Decision Tree Variable Importance", save_dir=save_dir, plot_val=False,
-    )
+    plot_connectivity_matrix(vi_matrix, neuron_names, "Decision Tree Variable Importance", save_dir=save_dir, plot_val=False,)
