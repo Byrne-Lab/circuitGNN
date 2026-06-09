@@ -24,20 +24,24 @@ REPO_ROOT = ARCH_DIR.parent
 sys.path.insert(0, str(ARCH_DIR))
 os.chdir(str(REPO_ROOT))
 
-from circuit_gnn.data import load_yuto_network, load_pdcm_network, load_arbitrary_network
+from circuit_gnn.data import (load_yuto_network, load_pdcm_network, load_arbitrary_network,
+                               load_small_circuit_A_network, load_small_circuit_B_network)
 from circuit_gnn.utils import (calculate_fit, align_matrices,
                                 get_consistent_connections, get_top_k, sign_inference)
 
 RESULTS_BASE = ARCH_DIR / "results"
 
 DATASET_REGISTRY = {
-    "yuto":      {"loader": load_yuto_network,     "loader_kwargs": {"downsample_factor": 20, "gap": 0.20, "step": 1}},
-    "pdcm":      {"loader": load_pdcm_network,      "loader_kwargs": {"downsample_factor": 2}},
+    "yuto":            {"loader": load_yuto_network,            "loader_kwargs": {"downsample_factor": 20, "gap": 0.20, "step": 1}},
+    "pdcm":            {"loader": load_pdcm_network,            "loader_kwargs": {"downsample_factor": 2}},
+    "arbitrary":       {"loader": load_arbitrary_network,       "loader_kwargs": {"downsample_factor": 10}},
+    "small_circuit_A": {"loader": load_small_circuit_A_network, "loader_kwargs": {"downsample_factor": 20}},
+    "small_circuit_B": {"loader": load_small_circuit_B_network, "loader_kwargs": {"downsample_factor": 20}},
 }
 
 ALL_ARCHITECTURES = [
     "baseline", "dales", "indirect_filter",
-    "skip_residual", "edge_cond", "split_path", "multi_step",
+    "skip_residual", "edge_cond", "split_path", "multi_step", "learned_scale", "hadamard_mod",
 ]
 
 

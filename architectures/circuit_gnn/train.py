@@ -9,7 +9,8 @@ from torch.utils.data import DataLoader
 from .dataset import SpikeTrainDataset, MultiStepSpikeTrainDataset
 from .models import (GraphNeuralNetwork, SpikeEncoder,
                      DalesLawGNN, IndirectFilterGNN,
-                     SkipGNN, EdgeCondGNN, SplitPathGNN, MultiStepGNN)
+                     SkipGNN, EdgeCondGNN, SplitPathGNN, MultiStepGNN,
+                     HadamardModGNN, LearnedScaleGNN)
 
 
 @dataclass
@@ -90,6 +91,10 @@ def build_models(
         gnn = SplitPathGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
     elif model_type == "multi_step":
         gnn = MultiStepGNN(num_neurons=num_neurons, k_steps=k_steps, **gnn_kwargs).to(device)
+    elif model_type == "hadamard_mod":
+        gnn = HadamardModGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
+    elif model_type == "learned_scale":
+        gnn = LearnedScaleGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
     else:
         gnn = GraphNeuralNetwork(num_neurons=num_neurons, **gnn_kwargs).to(device)
 

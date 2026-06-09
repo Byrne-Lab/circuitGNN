@@ -533,6 +533,7 @@ def load_pdcm_network(downsample_factor=2, gap=0, step=0):
 
     return binned_spikes, true_conn, neuron_names
 
+
 def load_v1_network(downsample_factor=2, gap=0, step=0):
     """
     Load the multi-area-model V1 simulation dataset.
@@ -637,6 +638,7 @@ def load_v1_network(downsample_factor=2, gap=0, step=0):
     plt.title(f'V1 Spike Raster  ({n_neurons} neurons, bin={downsample_factor} ms)')
     plt.tight_layout()
     plt.savefig(f'{data_dir}/raster.pdf', format='pdf')
+    plt.close()
 
     # Connectivity heatmap
 
@@ -677,5 +679,6 @@ def load_v1_network(downsample_factor=2, gap=0, step=0):
     plt.ylabel('Presynaptic (source)')
     plt.tight_layout()
     plt.savefig(f'{data_dir}/ground_truth.pdf', format='pdf')
-
+    plt.close()
+    
     return binned_spikes, true_conn, neuron_names

@@ -17,5 +17,5 @@ class SpikeTrainDataset(torch.utils.data.Dataset):
         start = index
         end = start + self.window_size
         input_window = self.spike_data[:, start:end]
-        target = self.spike_data[:, end]
+        target = self.spike_data[:, end].clamp(max=1.0)
         return input_window, target

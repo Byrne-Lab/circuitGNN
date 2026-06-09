@@ -426,4 +426,113 @@ def load_v1_network(downsample_factor=2, gap=0, step=0):
     plt.savefig(f'{data_dir}/ground_truth.pdf', format='pdf')
     plt.show()
 
+
+def load_small_circuit_A_network(downsample_factor=20, gap=0.20, step=1):
+    data_loc = 'datasets/small_circuit_A/spikes.out'
+    with open('datasets/small_circuit_A/spikes.head') as f:
+        neuron_names = [line.split('[')[1].split('.')[0] for line in f if line.startswith('V[')]
+
+    true_conn = np.zeros((3, 3))
+    true_conn[0, 1] = -1
+    true_conn[0, 2] = 1
+
+    cmap = sns.diverging_palette(240, 10, as_cmap=True)
+    norm = TwoSlopeNorm(vmin=-5, vcenter=0, vmax=2)
+    annot_str = [[f'{v:.3f}' if v != 0 else '' for v in row] for row in true_conn]
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(true_conn, xticklabels=neuron_names, yticklabels=neuron_names,
+                cmap=cmap, norm=norm, annot=annot_str, fmt='',
+                cbar_kws={'label': 'Connection Strength (mV)'}, square=True)
+    plt.title('True Connectivity')
+    plt.xlabel('Postsynaptic')
+    plt.ylabel('Presynaptic')
+    plt.tight_layout()
+    plt.savefig("datasets/small_circuit_A/ground_truth.pdf", format='pdf')
+    plt.close()
+
+    df = pd.read_csv(data_loc, sep='\t', header=None, skipinitialspace=True)
+    neuron_voltage_array = df.iloc[:, 1:-1].values.T
+
+    thr, ra = -10, 15
+    n_neurons, n_timepoints = neuron_voltage_array.shape
+    binned_spikes = np.zeros((n_neurons, n_timepoints), dtype=int)
+    for i in range(n_neurons):
+        sp = np.where(neuron_voltage_array[i] > thr)[0]
+        if sp.size > 0:
+            sp = sp[np.concatenate(([True], np.diff(sp) > ra))]
+            binned_spikes[i, sp] = 1
+
+    binned_spikes = binned_spikes[:, :binned_spikes.shape[1] // downsample_factor * downsample_factor]
+    binned_spikes = binned_spikes.reshape(binned_spikes.shape[0], -1, downsample_factor).sum(2)
+
+    bin_size_s = 0.5e-3 * downsample_factor
+    spike_times = [np.where(binned_spikes[i] > 0)[0] * bin_size_s for i in range(binned_spikes.shape[0])]
+    plt.figure(figsize=(10, 5))
+    plt.eventplot(spike_times, orientation='horizontal', linelengths=0.8, color='black')
+    plt.yticks(range(len(neuron_names)), neuron_names)
+    plt.gca().invert_yaxis()
+    plt.xlabel('Time (s)')
+    plt.ylabel('Neuron')
+    plt.title('Spike Raster')
+    plt.tight_layout()
+    plt.savefig("datasets/small_circuit_A/raster_plot.pdf", format='pdf')
+    plt.close()
+
+    return binned_spikes, true_conn, neuron_names
+
+
+def load_small_circuit_B_network(downsample_factor=20, gap=0.20, step=1):
+    data_loc = 'datasets/small_circuit_B/spikes.out'
+    with open('datasets/small_circuit_B/spikes.head') as f:
+        neuron_names = [line.split('[')[1].split('.')[0] for line in f if line.startswith('V[')]
+
+    true_conn = np.zeros((3, 3))
+    true_conn[0, 1] = 0.75
+    true_conn[0, 2] = 0.75
+    true_conn[2, 1] = 1
+
+    cmap = sns.diverging_palette(240, 10, as_cmap=True)
+    norm = TwoSlopeNorm(vmin=-5, vcenter=0, vmax=2)
+    annot_str = [[f'{v:.3f}' if v != 0 else '' for v in row] for row in true_conn]
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(true_conn, xticklabels=neuron_names, yticklabels=neuron_names,
+                cmap=cmap, norm=norm, annot=annot_str, fmt='',
+                cbar_kws={'label': 'Connection Strength (mV)'}, square=True)
+    plt.title('True Connectivity')
+    plt.xlabel('Postsynaptic')
+    plt.ylabel('Presynaptic')
+    plt.tight_layout()
+    plt.savefig("datasets/small_circuit_B/ground_truth.pdf", format='pdf')
+    plt.close()
+
+    df = pd.read_csv(data_loc, sep='\t', header=None, skipinitialspace=True)
+    neuron_voltage_array = df.iloc[:, 1:-1].values.T
+
+    thr, ra = -10, 15
+    n_neurons, n_timepoints = neuron_voltage_array.shape
+    binned_spikes = np.zeros((n_neurons, n_timepoints), dtype=int)
+    for i in range(n_neurons):
+        sp = np.where(neuron_voltage_array[i] > thr)[0]
+        if sp.size > 0:
+            sp = sp[np.concatenate(([True], np.diff(sp) > ra))]
+            binned_spikes[i, sp] = 1
+
+    binned_spikes = binned_spikes[:, :binned_spikes.shape[1] // downsample_factor * downsample_factor]
+    binned_spikes = binned_spikes.reshape(binned_spikes.shape[0], -1, downsample_factor).sum(2)
+
+    bin_size_s = 0.5e-3 * downsample_factor
+    spike_times = [np.where(binned_spikes[i] > 0)[0] * bin_size_s for i in range(binned_spikes.shape[0])]
+    plt.figure(figsize=(10, 5))
+    plt.eventplot(spike_times, orientation='horizontal', linelengths=0.8, color='black')
+    plt.yticks(range(len(neuron_names)), neuron_names)
+    plt.gca().invert_yaxis()
+    plt.xlabel('Time (s)')
+    plt.ylabel('Neuron')
+    plt.title('Spike Raster')
+    plt.tight_layout()
+    plt.savefig("datasets/small_circuit_B/raster_plot.pdf", format='pdf')
+    plt.close()
+
+    return binned_spikes, true_conn, neuron_names
+
     return binned_spikes, true_conn, neuron_names

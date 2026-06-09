@@ -59,6 +59,33 @@ class GNNLayer(nn.Module):
         return out
 
 
+class LearnedScaleGNNLayer(nn.Module):
+    """GNNLayer where neighbor and self contributions have learnable scalar weights b1, b2."""
+
+    def __init__(self, in_dim, out_dim, self_scale=0.5):
+        super().__init__()
+        mlp_dim = 2 * in_dim
+        self.W_message = nn.Sequential(
+            nn.Linear(in_dim, mlp_dim, bias=True),
+            nn.ReLU(),
+            nn.Linear(mlp_dim, out_dim, bias=True),
+        )
+        self.W_self = nn.Sequential(
+            nn.Linear(in_dim, out_dim, bias=True),
+            nn.ReLU(),
+        )
+        self.norm = nn.LayerNorm(out_dim)
+        self.relu = nn.ReLU()
+        self.b1 = nn.Parameter(torch.ones(1))
+        self.b2 = nn.Parameter(torch.tensor(float(self_scale)))
+
+    def forward(self, x, A):
+        neighbor_agg = torch.matmul(A, self.W_message(x))
+        self_term = self.W_self(x)
+        out = self.relu(self.norm(self.b1 * neighbor_agg + self.b2 * self_term))
+        return out
+
+
 class SkipGNNLayer(GNNLayer):
     """GNNLayer with a residual shortcut to prevent oversmoothing."""
 
@@ -226,6 +253,17 @@ class GraphNeuralNetwork(nn.Module):
         return self.fc_out(x).squeeze(-1)
 
 
+class LearnedScaleGNN(GraphNeuralNetwork):
+    """GraphNeuralNetwork with learnable b1/b2 scalars on neighbor and self terms."""
+
+    def _build_layers(self, num_layers, embedding_dim, hidden_dim, self_scale):
+        layers = []
+        for i in range(num_layers):
+            in_dim = embedding_dim if i == 0 else hidden_dim
+            layers.append(LearnedScaleGNNLayer(in_dim, hidden_dim, self_scale=self_scale))
+        return layers
+
+
 class SkipGNN(GraphNeuralNetwork):
     """GraphNeuralNetwork with residual skip connections in every GNN layer."""
 
@@ -256,6 +294,56 @@ class SplitPathGNN(GraphNeuralNetwork):
         for i in range(num_layers):
             in_dim = embedding_dim if i == 0 else hidden_dim
             layers.append(SplitPathGNNLayer(in_dim, hidden_dim, self_scale=self_scale))
+        return layers
+
+
+class HadamardModGNNLayer(nn.Module):
+    """GNN layer with additive + Hadamard-modulator message passing.
+
+    Inspired by AMAG (Li et al. NeurIPS 2023):
+      z_i = b*W_self(x_i) + b1*(A @ W_msg(x))_i + b2*W_mod(x_i ⊙ (A @ x)_i)
+
+    The Hadamard term A_ij*(x_i⊙x_j) summed over j equals x_i ⊙ (A @ x)_i.
+    Both paths share the same adjacency matrix. b, b1, b2 are learnable scalars.
+    """
+
+    def __init__(self, in_dim, out_dim, self_scale=0.5):
+        super().__init__()
+        mlp_dim = 2 * in_dim
+        self.W_message = nn.Sequential(
+            nn.Linear(in_dim, mlp_dim, bias=True),
+            nn.ReLU(),
+            nn.Linear(mlp_dim, out_dim, bias=True),
+        )
+        self.W_mod = nn.Linear(in_dim, out_dim, bias=True)
+        self.W_self = nn.Sequential(
+            nn.Linear(in_dim, out_dim, bias=True),
+            nn.ReLU(),
+        )
+        self.norm = nn.LayerNorm(out_dim)
+        self.relu = nn.ReLU()
+        self.b  = nn.Parameter(torch.tensor(float(self_scale)))
+        self.b1 = nn.Parameter(torch.ones(1))
+        self.b2 = nn.Parameter(torch.ones(1))
+
+    def forward(self, x, A):
+        neighbor_agg = torch.matmul(A, self.W_message(x))  # (batch, N, out_dim)
+        hadamard_agg = self.W_mod(x * torch.matmul(A, x))  # (batch, N, out_dim)
+        self_term    = self.W_self(x)                       # (batch, N, out_dim)
+        out = self.relu(self.norm(
+            self.b * self_term + self.b1 * neighbor_agg + self.b2 * hadamard_agg
+        ))
+        return out
+
+
+class HadamardModGNN(GraphNeuralNetwork):
+    """GraphNeuralNetwork using HadamardModGNNLayer in every message-passing step."""
+
+    def _build_layers(self, num_layers, embedding_dim, hidden_dim, self_scale):
+        layers = []
+        for i in range(num_layers):
+            in_dim = embedding_dim if i == 0 else hidden_dim
+            layers.append(HadamardModGNNLayer(in_dim, hidden_dim, self_scale=self_scale))
         return layers
 
 

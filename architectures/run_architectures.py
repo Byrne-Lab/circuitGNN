@@ -24,7 +24,8 @@ REPO_ROOT = ARCH_DIR.parent
 sys.path.insert(0, str(ARCH_DIR))
 os.chdir(str(REPO_ROOT))
 
-from circuit_gnn.data import load_yuto_network, load_pdcm_network, load_arbitrary_network
+from circuit_gnn.data import (load_yuto_network, load_pdcm_network, load_arbitrary_network,
+                               load_small_circuit_A_network, load_small_circuit_B_network)
 from circuit_gnn.train import TrainConfig, train_model, load_checkpoint
 from circuit_gnn.utils import plot_connectivity_matrix, plot_pdcm_matrix
 
@@ -79,6 +80,18 @@ ARCHITECTURES = {
         "encoder_kwargs": dict(**_BASE_ENC),
         "gnn_kwargs": dict(**_BASE_GNN),
     },
+    # baseline with learnable b1/b2 scalars on neighbor and self terms
+    "learned_scale": {
+        "config": {**_BASE_CFG, "model_type": "learned_scale"},
+        "encoder_kwargs": dict(**_BASE_ENC),
+        "gnn_kwargs": dict(**_BASE_GNN),
+    },
+    # AMAG-inspired: additive + Hadamard-modulator paths, shared adjacency, learnable b/b1/b2
+    "hadamard_mod": {
+        "config": {**_BASE_CFG, "model_type": "hadamard_mod"},
+        "encoder_kwargs": dict(**_BASE_ENC),
+        "gnn_kwargs": dict(**_BASE_GNN),
+    },
 }
 
 DATASET_REGISTRY = {
@@ -92,6 +105,24 @@ DATASET_REGISTRY = {
         "loader": load_pdcm_network,
         "loader_kwargs": {"downsample_factor": 2},
         "num_epochs": 50,
+        "default_window": 100,
+    },
+    "arbitrary": {
+        "loader": load_arbitrary_network,
+        "loader_kwargs": {"downsample_factor": 10},
+        "num_epochs": 20,
+        "default_window": 100,
+    },
+    "small_circuit_A": {
+        "loader": load_small_circuit_A_network,
+        "loader_kwargs": {"downsample_factor": 20},
+        "num_epochs": 20,
+        "default_window": 100,
+    },
+    "small_circuit_B": {
+        "loader": load_small_circuit_B_network,
+        "loader_kwargs": {"downsample_factor": 20},
+        "num_epochs": 20,
         "default_window": 100,
     },
 }
@@ -213,7 +244,7 @@ def main():
     parser.add_argument("--architectures", nargs="+", default=list(ARCHITECTURES.keys()),
                         choices=list(ARCHITECTURES.keys()),
                         help="Architectures to run (default: all)")
-    parser.add_argument("--num_runs", type=int, default=5,
+    parser.add_argument("--num_runs", type=int, default=10,
                         help="Number of random-seed runs per (dataset, architecture) pair")
     parser.add_argument("--num_epochs", type=int, default=None,
                         help="Override num_epochs for all datasets (useful for smoke tests)")

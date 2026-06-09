@@ -16,8 +16,8 @@ class TrainConfig:
     batch_size: int = 16
     num_epochs: int = 20
     lr: float = 1e-4
-    l1_lambda: float = 0.0    
-    competitive_lambda: float = 0.0   
+    l1_lambda: float = 5e-2    
+    competitive_lambda: float = 1e-1   
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     seed: int = 0
     num_workers: int = 0
@@ -36,7 +36,7 @@ def make_dataloaders(
 
     dataset = SpikeTrainDataset(spike_data, window_size)
 
-    # Sequential split: first 70% train, next 15% val, last 15% test
+    # 80% train, 20% val
     total_len = len(dataset)
     train_end = int(0.8 * total_len)
     train_set = torch.utils.data.Subset(dataset, range(0, train_end))
