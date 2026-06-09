@@ -1,7 +1,18 @@
 # Pozo-Jimenez et al. (2021) decision-tree connectivity method.
-# Python approximation of C5.0: sklearn DecisionTreeClassifier with entropy
-# criterion (≈ C4.5 information gain) and class_weight for cost sensitivity.
-# Variable importance via feature_importances_ (information-gain per split).
+# Python approximation of C5.0 (R package) using sklearn DecisionTreeClassifier.
+#
+# Key correspondences to the paper's R code (Afferents_learning repo):
+#   categorize.R     → prepare_intervals  (A-E subinterval binary features)
+#   thanos_snap.R    → _undersample       (1:4 negative undersampling)
+#   call_c50.R       → run_analysis       (entropy criterion, cost matrix)
+#   C5imp(usage)     → _feature_usage     (split-node count per feature)
+#   do_analysis.R    → run_analysis       (preprocess→model→predict→evaluate)
+#
+# Feature encoding: paper uses one nominal categorical per neuron {0,A,B,C,D,E};
+# we use 5 binary features per neuron (one-hot of A-E), which is equivalent for
+# a decision tree (multi-category splits decompose into binary splits).
+# Features are clipped to binary: the paper's categorize.R records WHICH bin
+# a spike fell in, not how many spikes — so 0/1 per subinterval is correct.
 
 import numpy as np
 from sklearn.tree import DecisionTreeClassifier
@@ -16,7 +27,9 @@ def prepare_intervals(binned_spikes, target_idx, window_bins=50, subinterval_bin
 
     Positive intervals: 50-bin window immediately before each target spike.
     Negative intervals: non-overlapping 50-bin chunks in the remaining time.
-    Features: spike count per source neuron per subinterval (A=closest, E=farthest).
+    Features: binary (0/1) per source neuron per subinterval (A=closest, E=farthest).
+    Clipped to binary to match paper's categorize.R: the label records WHICH bin
+    the spike fell in, not a count.
 
     Returns
     -------
@@ -48,7 +61,8 @@ def prepare_intervals(binned_spikes, target_idx, window_bins=50, subinterval_bin
                 if start < 0:
                     row.append(0)
                 else:
-                    row.append(int(np.sum(binned_spikes[src, start:end])))
+                    # Binary: did any spike occur in this subinterval? (not count)
+                    row.append(1 if np.any(binned_spikes[src, start:end]) else 0)
         return row
 
     rows, labels = [], []
@@ -74,6 +88,22 @@ def prepare_intervals(binned_spikes, target_idx, window_bins=50, subinterval_bin
         for s in range(n_sub)
     ]
     return X, y, feature_names, source_indices
+
+
+def _feature_usage(clf, n_features):
+    """
+    Usage-based variable importance: fraction of internal (non-leaf) split nodes
+    that use each feature.  Matches C5.0's C5imp(model, metric='usage') which
+    counts how many rules/conditions in the tree reference each variable.
+    Returns a normalized array in [0, 1].
+    """
+    node_features = clf.tree_.feature   # -2 for leaf nodes
+    counts = np.zeros(n_features)
+    for f in node_features:
+        if f >= 0:
+            counts[f] += 1
+    total = counts.sum()
+    return counts / total if total > 0 else counts
 
 
 def _undersample(X, y, ratio, rng):
@@ -129,7 +159,7 @@ def run_analysis(X, y, feature_names, n_runs=30, undersample_ratio=4,
         mccs.append(matthews_corrcoef(y, y_pred))
         precisions.append(precision_score(y, y_pred, zero_division=0))
         recalls.append(recall_score(y, y_pred, zero_division=0))
-        importances[run] = clf.feature_importances_
+        importances[run] = _feature_usage(clf, n_features)
 
     if not mccs:
         return {
@@ -145,6 +175,31 @@ def run_analysis(X, y, feature_names, n_runs=30, undersample_ratio=4,
         'mean_recall': float(np.mean(recalls)),
         'variable_importance': dict(zip(feature_names, importances.mean(axis=0).tolist())),
     }
+
+
+def analyze_target(binned_spikes, target_idx, window_bins=50, subinterval_bins=10,
+                   n_runs=30, undersample_ratio=4, fn_cost=3.5, fp_cost=1.0):
+    """
+    Full pipeline for one target neuron — mirrors do_analysis.R:
+      preprocess (prepare_intervals) → model+predict+evaluate (run_analysis)
+
+    Returns the run_analysis result dict plus the raw X, y, feature_names,
+    and source_indices so callers can do further analysis (iterative, combinatory).
+    """
+    X, y, feature_names, source_indices = prepare_intervals(
+        binned_spikes, target_idx,
+        window_bins=window_bins, subinterval_bins=subinterval_bins,
+    )
+    result = run_analysis(
+        X, y, feature_names,
+        n_runs=n_runs, undersample_ratio=undersample_ratio,
+        fn_cost=fn_cost, fp_cost=fp_cost,
+    )
+    result['X'] = X
+    result['y'] = y
+    result['feature_names'] = feature_names
+    result['source_indices'] = source_indices
+    return result
 
 
 def calculate_mcc_matrix(binned_spikes, window_bins=50, subinterval_bins=10, n_runs=30):
@@ -175,8 +230,7 @@ def calculate_mcc_matrix(binned_spikes, window_bins=50, subinterval_bins=10, n_r
             X_src = X_full[:, cols]
             if X_src.max() == 0:
                 continue
-            fnames = feature_names[cols] if hasattr(feature_names, '__getitem__') \
-                else [feature_names[c] for c in range(k * n_sub, (k + 1) * n_sub)]
+            fnames = feature_names[k * n_sub:(k + 1) * n_sub]
             result = run_analysis(X_src, y, fnames, n_runs=n_runs)
             mcc_matrix[src_idx, target_idx] = max(0.0, result['mean_mcc'])
 
@@ -190,7 +244,8 @@ def calculate_variable_importance_matrix(binned_spikes, window_bins=50, subinter
     when a full model (all sources as features) predicts target j.
 
     Matches the paper's "direct run" workflow; per-source importance is the sum
-    of sklearn feature_importances_ across that source's subinterval features.
+    of usage scores (_feature_usage, analogous to C5imp) across that source's
+    subinterval features.
     """
     print('Calculating decision tree variable importance matrix (full model)...')
     num_channels = binned_spikes.shape[0]
