@@ -20,7 +20,9 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
 
     if data == 'yuto':
         downsample_factor = 2  # 1 ms
-    else:
+    elif data == 'arbitrary':
+        downsample_factor = 1  # 1 ms
+    elif data == 'pdcm':
         downsample_factor = 1  # 1 ms
 
     save_dir = f"datasets/{data}/init"
@@ -35,4 +37,4 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
     print(f"GLM time: {(time.time() - start) / 60:.2f} min")
 
     np.save(f"{save_dir}/glm.npy", glm_conn)
-    plot_connectivity_matrix(glm_conn, neuron_names, "GLM (Gerhard 2013)", save_dir=save_dir, plot_val=False)
+    plot_connectivity_matrix(glm_conn, neuron_names, "GLM", save_dir=save_dir, plot_val=False)

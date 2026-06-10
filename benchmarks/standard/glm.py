@@ -71,12 +71,9 @@ def _fit_unit(binned_spikes, target_idx, self_basis, cross_basis, dt_ms, beta_mi
     return cs
 
 
-def calculate_glm(binned_spikes, self_lag_ms=200, cross_lag_ms=100,
-                  knot_spacing_ms=5, degree=2, dt_ms=1.0):
-    """
-    Gerhard et al. (2013) point-process GLM connectivity inference.
-    Returns (N, N) matrix; conn_matrix[i, j] = coupling strength i -> j.
-    """
+def calculate_glm(binned_spikes, self_lag_ms=200, cross_lag_ms=100, knot_spacing_ms=5, degree=2, dt_ms=1.0):
+    # Based on Gerhard et al. (2013)
+
     N = binned_spikes.shape[0]
     self_bins = max(1, int(self_lag_ms / dt_ms))
     cross_bins = max(1, int(cross_lag_ms / dt_ms))
