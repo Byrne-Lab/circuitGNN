@@ -5,7 +5,7 @@ from sklearn.metrics import matthews_corrcoef, precision_score, recall_score
 _SUB_LABELS = ['A', 'B', 'C', 'D', 'E']
 
 
-def prepare_intervals(binned_spikes, target_idx, window_bins=50, subinterval_bins=10):
+def _prepare_intervals(binned_spikes, target_idx, window_bins=50, subinterval_bins=10):
     num_channels, num_time = binned_spikes.shape
     n_sub = window_bins // subinterval_bins # 50 //10 = 5
     source_indices = [i for i in range(num_channels) if i != target_idx] # every neuron except the target
@@ -54,7 +54,7 @@ def _undersample(X, y, ratio, rng):
     return X[idx], y[idx]
 
 
-def run_analysis(X, y, feature_names, n_runs=30, undersample_ratio=4, fn_cost=3.5, fp_cost=1.0, train_frac=0.8, seed=1):
+def _run_analysis(X, y, feature_names, n_runs=30, undersample_ratio=4, fn_cost=3.5, fp_cost=1.0, train_frac=0.8, seed=1):
     n_features = X.shape[1]
     empty = {'mean_mcc': 0.0, 'sem_mcc': 0.0, 'mean_precision': 0.0, 'mean_recall': 0.0, 'variable_importance': {fn: 0.0 for fn in feature_names}}
 
@@ -90,12 +90,12 @@ def run_analysis(X, y, feature_names, n_runs=30, undersample_ratio=4, fn_cost=3.
     }
 
 
-def analyze_target(binned_spikes, target_idx, window_bins=50, subinterval_bins=10,
+def _analyze_target(binned_spikes, target_idx, window_bins=50, subinterval_bins=10,
                    n_runs=30, undersample_ratio=4, fn_cost=3.5, fp_cost=1.0):
-    
-    X, y, feature_names, source_indices = prepare_intervals(binned_spikes, target_idx, window_bins=window_bins, subinterval_bins=subinterval_bins)
 
-    result = run_analysis(X, y, feature_names, n_runs=n_runs, undersample_ratio=undersample_ratio, fn_cost=fn_cost, fp_cost=fp_cost)
+    X, y, feature_names, source_indices = _prepare_intervals(binned_spikes, target_idx, window_bins=window_bins, subinterval_bins=subinterval_bins)
+
+    result = _run_analysis(X, y, feature_names, n_runs=n_runs, undersample_ratio=undersample_ratio, fn_cost=fn_cost, fp_cost=fp_cost)
     result.update({'X': X, 'y': y, 'feature_names': feature_names, 'source_indices': source_indices})
     
     return result
@@ -111,14 +111,14 @@ def calculate_mcc_matrix(binned_spikes, window_bins=50, subinterval_bins=10, n_r
         if target_idx % 5 == 0:
             print(f'  target {target_idx}/{num_channels}')
 
-        X_full, y, feature_names, source_indices = prepare_intervals(binned_spikes, target_idx, window_bins=window_bins, subinterval_bins=subinterval_bins)
+        X_full, y, feature_names, source_indices = _prepare_intervals(binned_spikes, target_idx, window_bins=window_bins, subinterval_bins=subinterval_bins)
         if np.sum(y == 1) < 5:
             continue
         for k, src_idx in enumerate(source_indices):
             X_src = X_full[:, k * n_sub:(k + 1) * n_sub]
             if X_src.max() == 0:
                 continue
-            result = run_analysis(X_src, y, feature_names[k * n_sub:(k + 1) * n_sub], n_runs=n_runs)
+            result = _run_analysis(X_src, y, feature_names[k * n_sub:(k + 1) * n_sub], n_runs=n_runs)
             mcc_matrix[src_idx, target_idx] = max(0.0, result['mean_mcc'])
 
     np.fill_diagonal(mcc_matrix, 0)
@@ -134,11 +134,11 @@ def calculate_variable_importance_matrix(binned_spikes, window_bins=50, subinter
     for target_idx in range(num_channels):
         if target_idx % 5 == 0:
             print(f'  target {target_idx}/{num_channels}')
-        X, y, feature_names, source_indices = prepare_intervals(binned_spikes, target_idx, window_bins=window_bins, subinterval_bins=subinterval_bins)
+        X, y, feature_names, source_indices = _prepare_intervals(binned_spikes, target_idx, window_bins=window_bins, subinterval_bins=subinterval_bins)
         if np.sum(y == 1) < 5:
             continue
 
-        vi = run_analysis(X, y, feature_names, n_runs=n_runs)['variable_importance']
+        vi = _run_analysis(X, y, feature_names, n_runs=n_runs)['variable_importance']
         for src_idx in source_indices:
             vi_matrix[src_idx, target_idx] = sum(vi.get(f'U{src_idx + 1}_{_SUB_LABELS[s]}', 0.0) for s in range(n_sub))
 

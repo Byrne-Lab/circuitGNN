@@ -7,11 +7,11 @@ import torch.nn as nn
 from scipy.ndimage import gaussian_filter1d
 
 
-def smooth_spikes(spikes: np.ndarray, sigma_bins: float) -> np.ndarray:
+def _smooth_spikes(spikes: np.ndarray, sigma_bins: float) -> np.ndarray:
     return gaussian_filter1d(spikes.astype(np.float32), sigma=sigma_bins)
 
 
-def time_delay_embed(signal: np.ndarray, dim: int, tau: int) -> np.ndarray:
+def _time_delay_embed(signal: np.ndarray, dim: int, tau: int) -> np.ndarray:
     n_vectors = len(signal) - (dim - 1) * tau
     return np.stack(
         [signal[i * tau: i * tau + n_vectors] for i in range(dim)],
@@ -137,13 +137,13 @@ def calculate_frolov_connectivity(
     num_channels, num_time = binned_spikes.shape
 
     signals = (
-        np.array([smooth_spikes(binned_spikes[ch], smooth_sigma) for ch in range(num_channels)])
+        np.array([_smooth_spikes(binned_spikes[ch], smooth_sigma) for ch in range(num_channels)])
         if smooth_sigma > 0
         else binned_spikes.astype(np.float32)
     )
 
     if embed_dim > 1:
-        states = [time_delay_embed(signals[ch], embed_dim, tau) for ch in range(num_channels)]
+        states = [_time_delay_embed(signals[ch], embed_dim, tau) for ch in range(num_channels)]
         min_len = min(s.shape[0] for s in states)
         states  = [s[:min_len] for s in states]
     else:

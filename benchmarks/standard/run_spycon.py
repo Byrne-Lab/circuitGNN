@@ -9,6 +9,7 @@ sys.path.insert(0, str(_root / "src"))
 import numpy as np
 import os
 import time
+import itertools
 from circuit_gnn.data import *
 from circuit_gnn.utils import *
 
@@ -52,6 +53,31 @@ def result_to_matrix(result):
     return mat
 
 
+# spycon methods take a single params dict (NOT kwargs), e.g. GLMCC({'binsize': 0.002}).
+def _ms(v):
+    return f"{v * 1e3:g}ms"
+
+
+def factorial(cls, prefix, **axes):
+    # Full Cartesian grid over the given parameter axes.
+    names = list(axes)
+    out = {}
+    for combo in itertools.product(*(axes[k] for k in names)):
+        params = dict(zip(names, combo))
+        tag = "_".join(f"{k}{_ms(v)}" for k, v in params.items())
+        out[f"{prefix}_{tag}"] = cls(params)
+    return out
+
+
+def ofat(cls, prefix, **axes):
+    # One-factor-at-a-time: vary each axis, holding the others at their defaults.
+    out = {}
+    for key, values in axes.items():
+        for v in values:
+            out[f"{prefix}_{key}{_ms(v)}"] = cls({key: v})
+    return out
+
+
 for data in ['yuto', 'arbitrary', 'pdcm']:
 
     # 1 ms bins to accurately get spike times
@@ -74,17 +100,33 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
     times, ids = binned_to_spikes(binned_spikes, bin_size_sec)
     print(f'  Total spikes: {len(times)},  bin size: {bin_size_sec*1e3:.1f} ms')
 
+    # 1 ms is the resolution floor
     methods = {
         'ci_default':    CoincidenceIndex(),
-        'ci_1ms':    CoincidenceIndex(binsize=0.001),
-        'ci_2ms':    CoincidenceIndex(binsize=0.002),
-        'ci_5ms':    CoincidenceIndex(binsize=0.005),
-
-        'sccg':  Smoothed_CCG(),
-        'dsttc': directed_STTC(),
-        'glmcc': GLMCC(),
-        'glmpp': GLMPP(),
+        'sccg_default':  Smoothed_CCG(),
+        'dsttc_default': directed_STTC(),
+        'glmcc_default': GLMCC(),
+        'glmpp_default': GLMPP(),
     }
+
+    methods.update(factorial(CoincidenceIndex, 'ci',
+        binsize=[1e-3, 2e-3, 5e-3, 10e-3],
+        syn_tau=[3e-3, 6e-3, 10e-3, 20e-3]))
+
+    methods.update(ofat(Smoothed_CCG, 'sccg',
+        binsize=[1e-3, 2e-3, 5e-3],
+        gauss_std=[5e-3, 10e-3, 20e-3]))
+    methods.update({f'sccg_hf{hf}': Smoothed_CCG({'hf': hf}) for hf in (0.4, 0.6, 0.8)})
+
+    methods.update(ofat(directed_STTC, 'dsttc',
+        delta_t=[3e-3, 5e-3, 7e-3, 10e-3, 20e-3, 30e-3]))
+
+    methods.update(factorial(GLMCC, 'glmcc',
+        binsize=[1e-3, 2e-3, 5e-3, 10e-3], # drop binsize=10e-3 if slow
+        syn_delay=[1e-3, 3e-3, 5e-3, 10e-3]))
+
+    methods.update(ofat(GLMPP, 'glmpp',
+        tau=[2e-3, 5e-3, 10e-3, 20e-3]))
 
 
     for name, method in methods.items():

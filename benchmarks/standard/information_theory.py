@@ -26,7 +26,7 @@ def calculate_coincidence_index(te_curve, coincidence_window=5):
     return float(numerator / denominator)
 
 
-def get_top_neighbors(pairwise_te, j, exclude, k=5):
+def _get_top_neighbors(pairwise_te, j, exclude, k=5):
     te_into_j = pairwise_te[:, j].copy()
     te_into_j[exclude] = -np.inf
     te_into_j[j] = -np.inf
@@ -34,7 +34,7 @@ def get_top_neighbors(pairwise_te, j, exclude, k=5):
     return top_k[te_into_j[top_k] > 0]
 
 
-def H(prob):
+def _H(prob):
     p = prob[prob>0]
     return -np.sum(p * np.log2(p))
 
@@ -130,7 +130,7 @@ def calculate_conditional_transfer_entropy(binned_spikes, pairwise_te, L=3, n_su
             if i == j:
                 continue
 
-            top_neighbors = get_top_neighbors(pairwise_te, j, exclude=[i, j], k=3)
+            top_neighbors = _get_top_neighbors(pairwise_te, j, exclude=[i, j], k=3)
             if len(top_neighbors) == 0:
                 continue
 
