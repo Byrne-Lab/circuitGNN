@@ -30,8 +30,7 @@ class SpikeEncoder(nn.Module):
         x = F.pad(x, (self.kernel_size - 1, 0))  # left-only causal pad
         out = self.conv1d(x) # (B*N, conv_out, window_size) : (B*N, 32, 100)
 
-        # flipped the order of batchnorm and relu
-        out = self.batchnorm(out)
+        out = self.batchnorm(out) # normalizes each of the 32 channels independently, computing mean and var across B*N batch and 100 time dim
         out = self.relu(out)
 
         out = out.view(batch_size * num_neurons, -1) # (B*N, conv_out * T) : (B*N, 3200)
