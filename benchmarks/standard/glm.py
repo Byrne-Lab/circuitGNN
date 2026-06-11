@@ -8,7 +8,6 @@ from scipy.optimize import minimize
 from scipy.interpolate import BSpline
 from tqdm import tqdm
 
-# Paper's lower bound for (diverging) inhibitory coefficients.
 COEF_LOWER_BOUND = -20.0
 
 
