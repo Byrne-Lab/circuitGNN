@@ -11,6 +11,8 @@ from matplotlib.colors import ListedColormap
 import copy
 import numpy.matlib as matlib
 from scipy.optimize import minimize_scalar
+from sklearn.metrics import (precision_score, recall_score, f1_score,
+                             matthews_corrcoef, roc_auc_score)
 
 def overlay_zeros(ax, matrix):
     # Paint exact-zero cells bright white on top of an existing imshow
@@ -178,22 +180,23 @@ def calculate_fit(true_conn, learned_conn, plot=True):
     rho, _   = spearmanr(v1, v2)
     nie = np.linalg.norm((true_conn - learned_conn_rescaled)[mask]) / np.linalg.norm(true_conn[mask]) # normalized inference error
 
-    # Binary masks
-    learned_bin = (learned_conn != 0).astype(int)
-    true_bin    = (true_conn    != 0).astype(int)
-    lb_m = learned_bin[mask]
-    tb_m = true_bin[mask]
+    # binary masks (off-diagonal)
+    lb_m = (learned_conn[mask] != 0).astype(int)
+    tb_m = (true_conn[mask]    != 0).astype(int)
 
-    # Unsigned TP/FP/FN
-    tp = np.sum((lb_m == 1) & (tb_m == 1))
-    fp = np.sum((lb_m == 1) & (tb_m == 0))
-    fn = np.sum((lb_m == 0) & (tb_m == 1))
+    # Unsigned metrics via sklearn (standard binary classification)
+    overall_precision = precision_score(tb_m, lb_m, zero_division=0)
+    overall_recall    = recall_score(tb_m, lb_m, zero_division=0)
+    overall_f1        = f1_score(tb_m, lb_m, zero_division=0)
+    mcc_unsigned      = matthews_corrcoef(tb_m, lb_m)
+    auroc = roc_auc_score(tb_m, np.abs(learned_conn[mask])) if 0 < tb_m.sum() < tb_m.size else float('nan')
 
-    overall_precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-    overall_recall    = tp / (tp + fn) if (tp + fn) > 0 else 0
-    overall_f1        = 2 * (overall_precision * overall_recall) / (overall_precision + overall_recall) if (overall_precision + overall_recall) > 0 else 0
+    # raw counts retained for the classification-map plot
+    tp = int(np.sum((lb_m == 1) & (tb_m == 1)))
+    fp = int(np.sum((lb_m == 1) & (tb_m == 0)))
+    fn = int(np.sum((lb_m == 0) & (tb_m == 1)))
 
-    # Signed TP/FP/FN
+    # signed TP/FP/FN
     tp_pos = (learned_conn[mask] > 0) & (true_conn[mask] > 0)
     tp_neg = (learned_conn[mask] < 0) & (true_conn[mask] < 0)
     tp_s   = tp_pos | tp_neg
@@ -208,17 +211,11 @@ def calculate_fit(true_conn, learned_conn, plot=True):
     signed_recall    = tp_signed / (tp_signed + fn_signed) if (tp_signed + fn_signed) > 0 else 0
     signed_f1        = 2 * (signed_precision * signed_recall) / (signed_precision + signed_recall) if (signed_precision + signed_recall) > 0 else 0
 
-    # Mathews Correlation Coefficient
-    total = mask.sum()
-    tn        = total - tp - fp - fn
-    tn_signed = total - tp_signed - fp_signed - fn_signed
-
-    def _mcc(tp, tn, fp, fn):
-        denom = np.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
-        return (tp * tn - fp * fn) / denom if denom > 0 else 0.0
-
-    mcc_unsigned = _mcc(tp, tn, fp, fn)
-    mcc_signed   = _mcc(tp_signed, tn_signed, fp_signed, fn_signed)
+    # MCC
+    tn_signed = mask.sum() - tp_signed - fp_signed - fn_signed
+    denom = np.sqrt((tp_signed + fp_signed) * (tp_signed + fn_signed) *
+                    (tn_signed + fp_signed) * (tn_signed + fn_signed))
+    mcc_signed = (tp_signed * tn_signed - fp_signed * fn_signed) / denom if denom > 0 else 0.0
 
     # plot
     if plot:

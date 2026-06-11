@@ -53,13 +53,12 @@ def result_to_matrix(result):
     return mat
 
 
-# spycon methods take a single params dict (NOT kwargs), e.g. GLMCC({'binsize': 0.002}).
 def _ms(v):
     return f"{v * 1e3:g}ms"
 
 
 def factorial(cls, prefix, **axes):
-    # Full Cartesian grid over the given parameter axes.
+    # full Cartesian grid over the given parameter axes
     names = list(axes)
     out = {}
     for combo in itertools.product(*(axes[k] for k in names)):
@@ -70,7 +69,7 @@ def factorial(cls, prefix, **axes):
 
 
 def ofat(cls, prefix, **axes):
-    # One-factor-at-a-time: vary each axis, holding the others at their defaults.
+    # one-factor-at-a-time: vary each axis, holding the others at their defaults
     out = {}
     for key, values in axes.items():
         for v in values:
@@ -114,9 +113,8 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
         syn_tau=[3e-3, 6e-3, 10e-3, 20e-3]))
 
     methods.update(ofat(Smoothed_CCG, 'sccg',
-        binsize=[1e-3, 2e-3, 5e-3],
-        gauss_std=[5e-3, 10e-3, 20e-3]))
-    methods.update({f'sccg_hf{hf}': Smoothed_CCG({'hf': hf}) for hf in (0.4, 0.6, 0.8)})
+        binsize=[1e-3, 2e-3, 5e-3]))
+    methods.update({f'sccg_hf{hf}': Smoothed_CCG({'hf': hf}) for hf in (0.4, 0.8)})
 
     methods.update(ofat(directed_STTC, 'dsttc',
         delta_t=[3e-3, 5e-3, 7e-3, 10e-3, 20e-3, 30e-3]))

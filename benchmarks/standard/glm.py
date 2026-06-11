@@ -141,7 +141,7 @@ def _fit_unit(binned_spikes, target_idx, self_basis, cross_basis, dt_ms):
     return cs
 
 
-def calculate_glm(binned_spikes, self_lag_ms=None, cross_lag_ms=None, dt_ms=1.0, select_lags=True, self_max_ms=800.0, cross_max_ms=250.0):
+def calculate_glm(binned_spikes, self_lag_ms=None, cross_lag_ms=None, dt_ms=1.0, select_lags=True, self_max_ms=750.0, cross_max_ms=250.0):
     knot_spacing_ms = 5
     degree = 2
 
