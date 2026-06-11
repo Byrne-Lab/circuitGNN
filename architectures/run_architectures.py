@@ -92,6 +92,42 @@ ARCHITECTURES = {
         "encoder_kwargs": dict(**_BASE_ENC),
         "gnn_kwargs": dict(**_BASE_GNN),
     },
+    # messages computed from pairwise embedding differences h_i - h_j
+    "diff": {
+        "config": {**_BASE_CFG, "model_type": "diff"},
+        "encoder_kwargs": dict(**_BASE_ENC),
+        "gnn_kwargs": dict(**_BASE_GNN),
+    },
+    # Transformer-style row-wise softmax over incoming edges (learnable temperature)
+    "softmax": {
+        "config": {**_BASE_CFG, "model_type": "softmax"},
+        "encoder_kwargs": dict(**_BASE_ENC),
+        "gnn_kwargs": dict(**_BASE_GNN),
+    },
+    # learnable per-neuron self-term scale vector
+    "per_neuron_self": {
+        "config": {**_BASE_CFG, "model_type": "per_neuron_self"},
+        "encoder_kwargs": dict(**_BASE_ENC),
+        "gnn_kwargs": dict(**_BASE_GNN),
+    },
+    # GRU-cell state update integrating neighbor messages (Yoon 2025-inspired)
+    "gated": {
+        "config": {**_BASE_CFG, "model_type": "gated"},
+        "encoder_kwargs": dict(**_BASE_ENC),
+        "gnn_kwargs": dict(**_BASE_GNN),
+    },
+    # AMAG-style sample-dependent Adaptor S[b,i,j] modulating the shared adjacency
+    "adaptive": {
+        "config": {**_BASE_CFG, "model_type": "adaptive"},
+        "encoder_kwargs": dict(**_BASE_ENC),
+        "gnn_kwargs": dict(**_BASE_GNN),
+    },
+    # baseline with a ReLU on the message path too (symmetric with W_self)
+    "relu_message": {
+        "config": {**_BASE_CFG, "model_type": "relu_message"},
+        "encoder_kwargs": dict(**_BASE_ENC),
+        "gnn_kwargs": dict(**_BASE_GNN),
+    },
 }
 
 DATASET_REGISTRY = {

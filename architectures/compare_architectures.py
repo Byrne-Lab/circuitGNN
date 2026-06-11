@@ -41,7 +41,8 @@ DATASET_REGISTRY = {
 
 ALL_ARCHITECTURES = [
     "baseline", "dales", "indirect_filter",
-    "skip_residual", "edge_cond", "split_path", "multi_step", "learned_scale", "hadamard_mod",
+    "skip_residual", "edge_cond", "split_path", "multi_step", "learned_scale", "hadamard_mod", "diff",
+    "softmax", "per_neuron_self", "gated", "adaptive", "relu_message",
 ]
 
 

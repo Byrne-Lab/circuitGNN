@@ -75,7 +75,11 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
     print(f'  Total spikes: {len(times)},  bin size: {bin_size_sec*1e3:.1f} ms')
 
     methods = {
-        'ci':    CoincidenceIndex(),
+        'ci_default':    CoincidenceIndex(),
+        'ci_1ms':    CoincidenceIndex(binsize=0.001),
+        'ci_2ms':    CoincidenceIndex(binsize=0.002),
+        'ci_5ms':    CoincidenceIndex(binsize=0.005),
+
         'sccg':  Smoothed_CCG(),
         'dsttc': directed_STTC(),
         'glmcc': GLMCC(),

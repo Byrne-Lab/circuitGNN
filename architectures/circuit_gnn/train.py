@@ -10,7 +10,9 @@ from .dataset import SpikeTrainDataset, MultiStepSpikeTrainDataset
 from .models import (GraphNeuralNetwork, SpikeEncoder,
                      DalesLawGNN, IndirectFilterGNN,
                      SkipGNN, EdgeCondGNN, SplitPathGNN, MultiStepGNN,
-                     HadamardModGNN, LearnedScaleGNN)
+                     HadamardModGNN, LearnedScaleGNN, DiffGNN,
+                     SoftmaxGNN, PerNeuronSelfScaleGNN, GatedGNN, AdaptiveGNN,
+                     ReLUMessageGNN)
 
 
 @dataclass
@@ -23,7 +25,7 @@ class TrainConfig:
     competitive_lambda: float = 0.0
     indirect_lambda: float = 0.0
     k_steps: int = 1            # >1 activates MultiStepSpikeTrainDataset
-    model_type: str = "standard"  # "standard"|"dales"|"indirect_filter"|"skip"|"edge_cond"|"split_path"|"multi_step"
+    model_type: str = "standard"  # "standard"|"dales"|"indirect_filter"|"skip"|"edge_cond"|"split_path"|"multi_step"|"hadamard_mod"|"learned_scale"|"diff"|"softmax"|"per_neuron_self"|"gated"|"adaptive"|"relu_message"
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     seed: int = 0
     num_workers: int = 0
@@ -95,6 +97,18 @@ def build_models(
         gnn = HadamardModGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
     elif model_type == "learned_scale":
         gnn = LearnedScaleGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
+    elif model_type == "diff":
+        gnn = DiffGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
+    elif model_type == "softmax":
+        gnn = SoftmaxGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
+    elif model_type == "per_neuron_self":
+        gnn = PerNeuronSelfScaleGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
+    elif model_type == "gated":
+        gnn = GatedGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
+    elif model_type == "adaptive":
+        gnn = AdaptiveGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
+    elif model_type == "relu_message":
+        gnn = ReLUMessageGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
     else:
         gnn = GraphNeuralNetwork(num_neurons=num_neurons, **gnn_kwargs).to(device)
 
@@ -118,7 +132,12 @@ def compute_loss(
                 torch.log(1 + torch.abs(model.learned_adj_exc)).sum()
                 + torch.log(1 + torch.abs(model.learned_adj_inh)).sum()
             )
-            competitive_penalty = competitive_lambda * (model.learned_adj_exc * model.learned_adj_inh).sum()
+            # penalize only coexisting rectified weights; raw params can go negative
+            # (dead under the relu in get_adjacency), and a negative product would
+            # *reward* growing the opposite matrix instead of penalizing overlap
+            competitive_penalty = competitive_lambda * (
+                torch.relu(model.learned_adj_exc) * torch.relu(model.learned_adj_inh)
+            ).sum()
             loss = loss + l1_adj + competitive_penalty
 
         if indirect_lambda > 0.0 and hasattr(model, 'get_adjacency'):
@@ -198,6 +217,11 @@ def train_model(
 ) -> Dict[str, Any]:
     os.makedirs(config.output_dir, exist_ok=True)
     device = config.device
+
+    # make each run reproducible: seeds model init and DataLoader shuffling
+    torch.manual_seed(config.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(config.seed)
 
     train_loader, val_loader = make_dataloaders(
         spike_data,

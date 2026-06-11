@@ -52,7 +52,7 @@ ALL_VARIANTS = [
     # encoder kernel size
     "kernel_size_2", "kernel_size_3", "kernel_size_4",
     # L1 regularisation
-    "l1_0", "l1_1e-3", "l1_1e-2", "l1_5e-2", "l1_1e-1", "l1_1",
+    "l1_0", "l1_1e-3", "l1_1e-2", "l1_5e-2", "l1_1e-1",
     # competitive lambda
     "comp_0", "comp_1e-2", "comp_1e-1", "comp_1",
     # self_scale
@@ -63,6 +63,15 @@ ALL_VARIANTS = [
     "hidden_32", "hidden_64", "hidden_128",
     # learning rate
     "lr_1e-5", "lr_5e-5", "lr_1e-4", "lr_5e-4",
+    # kernel size × channels sweep
+    "kernel_2_channels_8", "kernel_2_channels_16", "kernel_2_channels_32", "kernel_2_channels_64",
+    "kernel_3_channels_8", "kernel_3_channels_16", "kernel_3_channels_32", "kernel_3_channels_64",
+    "kernel_4_channels_8", "kernel_4_channels_16", "kernel_4_channels_32", "kernel_4_channels_64",
+    # embedding dim × hidden dim sweep
+    "emb_16_hidden_16", "emb_16_hidden_32", "emb_16_hidden_64", "emb_16_hidden_128",
+    "emb_32_hidden_16", "emb_32_hidden_32", "emb_32_hidden_64", "emb_32_hidden_128",
+    "emb_64_hidden_16", "emb_64_hidden_32", "emb_64_hidden_64", "emb_64_hidden_128",
+    "emb_128_hidden_16", "emb_128_hidden_32", "emb_128_hidden_64", "emb_128_hidden_128",
 ]
 
 

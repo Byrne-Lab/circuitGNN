@@ -65,7 +65,7 @@ def main():
     spike_tensor = torch.tensor(binned_spikes, dtype=torch.float32)
 
     # Compute pos_weight for BCE loss
-    train_targets = spike_tensor[:, window_size:int(0.7 * num_time)]  # first 70% as train
+    train_targets = spike_tensor[:, window_size:int(0.8 * num_time)]  # first 80% as train
     pos = train_targets.sum().item()
     neg = train_targets.numel() - pos
     pos_weight = torch.tensor(neg / pos, device=device) if pos > 0 else torch.tensor(1.0, device=device)

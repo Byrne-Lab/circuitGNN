@@ -431,7 +431,7 @@ def main():
     parser.add_argument("--variants", nargs="+", default=list(VARIANTS.keys()),
                         choices=list(VARIANTS.keys()),
                         help="Variants to run (default: all)")
-    parser.add_argument("--num_runs", type=int, default=10,
+    parser.add_argument("--num_runs", type=int, default=5,
                         help="Number of random-seed runs per (dataset, variant) pair")
     args = parser.parse_args()
 
