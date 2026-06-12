@@ -5,7 +5,9 @@ Run from repo root after running run_variants.py:
     python variants/compare_variants.py --dataset yuto --variants baseline dales layers_7
     python variants/compare_variants.py --dataset arbitrary --ablation_threshold 0.10
 
-Prints a table: cosine, pearson, spearman, unsigned F1, signed F1 for each variant.
+Prints a table and saves a CSV (variant_comparison_<dataset>_thr<threshold>.csv) with all
+metrics (cosine, pearson, spearman, unsigned/signed F1, unsigned/signed MCC, AUROC, NIE) for both
+the mean and the consistent-mean matrix of each variant.
 """
 
 import os
@@ -28,7 +30,8 @@ os.chdir(str(REPO_ROOT))
 from circuit_gnn.data import load_yuto_network, load_pdcm_network, load_arbitrary_network
 from circuit_gnn.utils import (calculate_fit, align_matrices,
                                 get_consistent_connections, get_top_k, sign_inference,
-                                plot_connectivity_matrix, plot_pdcm_matrix)
+                                plot_connectivity_matrix, plot_pdcm_matrix,
+                                plot_metric_verification)
 
 RESULTS_BASE = VARIANTS_DIR / "results"
 
@@ -143,34 +146,53 @@ def main():
                 "variant": variant, "n_passed": 0, "n_total": n_total,
                 "cosine": "-", "pearson": "-", "spearman": "-",
                 "f1_unsign": "-", "f1_signed": "-",
-                "pearson_cons": "-", "f1_unsign_cons": "-", "f1_signed_cons": "-",
+                "mcc_unsign": "-", "mcc_signed": "-", "auroc": "-", "nie": "-",
+                "cosine_cons": "-", "pearson_cons": "-", "spearman_cons": "-",
+                "f1_unsign_cons": "-", "f1_signed_cons": "-",
+                "mcc_unsign_cons": "-", "mcc_signed_cons": "-", "auroc_cons": "-", "nie_cons": "-",
             })
             continue
 
         variant_dir = RESULTS_BASE / args.dataset / variant
         do_plot(mean_A, "mean", str(variant_dir))
         do_plot(consistent_mean_A, "mean_consistent", str(variant_dir))
+        plot_metric_verification(true_conn, consistent_mean_A, str(variant_dir),
+                                 method_name=f"{variant} — consistent mean")
 
-        cos, pear, spear, _, _, f1, _, _, sf1 = calculate_fit(true_conn, mean_A, plot=False)
-        _, pear_c, _, _, _, f1_c, _, _, sf1_c = calculate_fit(true_conn, consistent_mean_A, plot=False)
+        res   = calculate_fit(true_conn, mean_A, plot=False)
+        res_c = calculate_fit(true_conn, consistent_mean_A, plot=False)
         rows.append({
-            "variant":        variant,
-            "n_passed":       n_passed,
-            "n_total":        n_total,
-            "cosine":         f"{cos:.3f}",
-            "pearson":        f"{pear:.3f}",
-            "spearman":       f"{spear:.3f}",
-            "f1_unsign":      f"{f1:.3f}",
-            "f1_signed":      f"{sf1:.3f}",
-            "pearson_cons":   f"{pear_c:.3f}",
-            "f1_unsign_cons": f"{f1_c:.3f}",
-            "f1_signed_cons": f"{sf1_c:.3f}",
+            "variant":         variant,
+            "n_passed":        n_passed,
+            "n_total":         n_total,
+            "cosine":          f"{res.cosine:.3f}",
+            "pearson":         f"{res.pearson:.3f}",
+            "spearman":        f"{res.spearman:.3f}",
+            "f1_unsign":       f"{res.overall_f1:.3f}",
+            "f1_signed":       f"{res.signed_f1:.3f}",
+            "mcc_unsign":      f"{res.mcc_unsigned:.3f}",
+            "mcc_signed":      f"{res.mcc_signed:.3f}",
+            "auroc":           f"{res.auroc:.3f}",
+            "nie":             f"{res.nie:.3f}",
+            "cosine_cons":     f"{res_c.cosine:.3f}",
+            "pearson_cons":    f"{res_c.pearson:.3f}",
+            "spearman_cons":   f"{res_c.spearman:.3f}",
+            "f1_unsign_cons":  f"{res_c.overall_f1:.3f}",
+            "f1_signed_cons":  f"{res_c.signed_f1:.3f}",
+            "mcc_unsign_cons": f"{res_c.mcc_unsigned:.3f}",
+            "mcc_signed_cons": f"{res_c.mcc_signed:.3f}",
+            "auroc_cons":      f"{res_c.auroc:.3f}",
+            "nie_cons":        f"{res_c.nie:.3f}",
         })
 
     df = pd.DataFrame(rows).set_index("variant")
     print(f"\n=== {args.dataset} — variant comparison (ablation threshold={args.ablation_threshold}) ===")
     print(df.to_string())
     print()
+
+    csv_path = VARIANTS_DIR / f"variant_comparison_{args.dataset}_thr{args.ablation_threshold}.csv"
+    df.to_csv(csv_path)
+    print(f"Saved full metrics table to {csv_path}")
 
 
 if __name__ == "__main__":

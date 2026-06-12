@@ -84,27 +84,27 @@ gdi_sign, di_sign = sign_inference(binned_spikes.T, 3) # obtain sign
 signed_mean_A = np.abs(mean_A) * gdi_sign
 
 do_plot(mean_A, 'mean')
-cosine_mean, pearson_mean, spearman_mean, overall_precision_mean, overall_recall_mean, overall_f1_mean, signed_precision_mean, signed_recall_mean, signed_f1_mean = calculate_fit(true_conn, mean_A)
-print(f"\nMean: Cosine={cosine_mean:.2f}, Pearson={pearson_mean:.2f}, Spearman={spearman_mean:.2f}, Overall Precision={overall_precision_mean:.2f}, Overall Recall={overall_recall_mean:.2f}, Overall F1={overall_f1_mean:.2f}, Signed Precision={signed_precision_mean:.2f}, Signed Recall={signed_recall_mean:.2f}, Signed F1={signed_f1_mean:.2f}")
+res = calculate_fit(true_conn, mean_A)
+print(f"\nMean: Cosine={res.cosine:.2f}, Pearson={res.pearson:.2f}, Spearman={res.spearman:.2f}, Overall Precision={res.overall_precision:.2f}, Overall Recall={res.overall_recall:.2f}, Overall F1={res.overall_f1:.2f}, Signed Precision={res.signed_precision:.2f}, Signed Recall={res.signed_recall:.2f}, Signed F1={res.signed_f1:.2f}, MCC={res.mcc_unsigned:.2f}, Signed MCC={res.mcc_signed:.2f}, AUROC={res.auroc:.2f}, NIE={res.nie:.2f}")
 
 do_plot(consistent_mean_A, 'mean_consistent')
-cosine_mean, pearson_mean, spearman_mean, overall_precision_consistent, overall_recall_consistent, overall_f1_consistent, signed_precision_consistent, signed_recall_consistent, signed_f1_consistent = calculate_fit(true_conn, consistent_mean_A)
-print(f"\nConsistent Mean: Cosine={cosine_mean:.2f}, Pearson={pearson_mean:.2f}, Spearman={spearman_mean:.2f}, Overall Precision={overall_precision_consistent:.2f}, Overall Recall={overall_recall_consistent:.2f}, Overall F1={overall_f1_consistent:.2f}, Signed Precision={signed_precision_consistent:.2f}, Signed Recall={signed_recall_consistent:.2f}, Signed F1={signed_f1_consistent:.2f}")
+res = calculate_fit(true_conn, consistent_mean_A)
+print(f"\nConsistent Mean: Cosine={res.cosine:.2f}, Pearson={res.pearson:.2f}, Spearman={res.spearman:.2f}, Overall Precision={res.overall_precision:.2f}, Overall Recall={res.overall_recall:.2f}, Overall F1={res.overall_f1:.2f}, Signed Precision={res.signed_precision:.2f}, Signed Recall={res.signed_recall:.2f}, Signed F1={res.signed_f1:.2f}, MCC={res.mcc_unsigned:.2f}, Signed MCC={res.mcc_signed:.2f}, AUROC={res.auroc:.2f}, NIE={res.nie:.2f}")
 
 do_plot(consistent_mean_A_top, 'mean_consistent_topk')
-cosine_mean, pearson_mean, spearman_mean, overall_precision_topk, overall_recall_topk, overall_f1_topk, signed_precision_topk, signed_recall_topk, signed_f1_topk = calculate_fit(true_conn, consistent_mean_A_top)
-print(f"\nConsistent Mean Top-K: Cosine={cosine_mean:.2f}, Pearson={pearson_mean:.2f}, Spearman={spearman_mean:.2f}, Overall Precision={overall_precision_topk:.2f}, Overall Recall={overall_recall_topk:.2f}, Overall F1={overall_f1_topk:.2f}, Signed Precision={signed_precision_topk:.2f}, Signed Recall={signed_recall_topk:.2f}, Signed F1={signed_f1_topk:.2f}")
+res = calculate_fit(true_conn, consistent_mean_A_top)
+print(f"\nConsistent Mean Top-K: Cosine={res.cosine:.2f}, Pearson={res.pearson:.2f}, Spearman={res.spearman:.2f}, Overall Precision={res.overall_precision:.2f}, Overall Recall={res.overall_recall:.2f}, Overall F1={res.overall_f1:.2f}, Signed Precision={res.signed_precision:.2f}, Signed Recall={res.signed_recall:.2f}, Signed F1={res.signed_f1:.2f}, MCC={res.mcc_unsigned:.2f}, Signed MCC={res.mcc_signed:.2f}, AUROC={res.auroc:.2f}, NIE={res.nie:.2f}")
 
 do_plot(signed_mean_A, 'mean_signed_Young_et_al')
-cosine_mean, pearson_mean, spearman_mean, overall_precision_topk, overall_recall_topk, overall_f1_topk, signed_precision_topk, signed_recall_topk, signed_f1_topk = calculate_fit(true_conn, signed_mean_A)
-print(f"\nYoung et al. Signed Mean: Cosine={cosine_mean:.2f}, Pearson={pearson_mean:.2f}, Spearman={spearman_mean:.2f}, Overall Precision={overall_precision_topk:.2f}, Overall Recall={overall_recall_topk:.2f}, Overall F1={overall_f1_topk:.2f}, Signed Precision={signed_precision_topk:.2f}, Signed Recall={signed_recall_topk:.2f}, Signed F1={signed_f1_topk:.2f}")
+res = calculate_fit(true_conn, signed_mean_A)
+print(f"\nYoung et al. Signed Mean: Cosine={res.cosine:.2f}, Pearson={res.pearson:.2f}, Spearman={res.spearman:.2f}, Overall Precision={res.overall_precision:.2f}, Overall Recall={res.overall_recall:.2f}, Overall F1={res.overall_f1:.2f}, Signed Precision={res.signed_precision:.2f}, Signed Recall={res.signed_recall:.2f}, Signed F1={res.signed_f1:.2f}, MCC={res.mcc_unsigned:.2f}, Signed MCC={res.mcc_signed:.2f}, AUROC={res.auroc:.2f}, NIE={res.nie:.2f}")
 
 # Baseline: CTM_DI (Cai et al.)
 A_init_path_cai = os.path.join(f"{data_loc}/CTM_DI.npy")
 A_init_cai = np.load(A_init_path_cai)
 do_plot(A_init_cai, 'mean_CTM-DI')
-cosine_cai, pearson_cai, spearman_cai, overall_precision_cai, overall_recall_cai, overall_f1_cai, signed_precision_cai, signed_recall_cai, signed_f1_cai = calculate_fit(true_conn, A_init_cai)
-print(f"\n Cai et al: Cosine={cosine_cai:.2f}, Pearson={pearson_cai:.2f}, Spearman={spearman_cai:.2f}, Overall Precision={overall_precision_cai:.2f}, Overall Recall={overall_recall_cai:.2f}, Overall F1={overall_f1_cai:.2f}, Signed Precision={signed_precision_cai:.2f}, Signed Recall={signed_recall_cai:.2f}, Signed F1={signed_f1_cai:.2f}")
+res = calculate_fit(true_conn, A_init_cai)
+print(f"\n Cai et al: Cosine={res.cosine:.2f}, Pearson={res.pearson:.2f}, Spearman={res.spearman:.2f}, Overall Precision={res.overall_precision:.2f}, Overall Recall={res.overall_recall:.2f}, Overall F1={res.overall_f1:.2f}, Signed Precision={res.signed_precision:.2f}, Signed Recall={res.signed_recall:.2f}, Signed F1={res.signed_f1:.2f}, MCC={res.mcc_unsigned:.2f}, Signed MCC={res.mcc_signed:.2f}, AUROC={res.auroc:.2f}, NIE={res.nie:.2f}")
 
 # Baseline: Correlation
 A_init_path_corr = os.path.join(f"{data_loc}/correlation.npy")
@@ -112,8 +112,8 @@ A_init_corr = np.load(A_init_path_corr)
 A_init_corr = np.round(A_init_corr, 3)
 
 do_plot(A_init_corr, 'correlation')
-cosine_corr, pearson_corr, spearman_corr, overall_precision_corr, overall_recall_corr, overall_f1_corr, signed_precision_corr, signed_recall_corr, signed_f1_corr = calculate_fit(true_conn, A_init_corr)
-print(f"\nCorrelation: Cosine={cosine_corr:.2f}, Pearson={pearson_corr:.2f}, Spearman={spearman_corr:.2f}, Overall Precision={overall_precision_corr:.2f}, Overall Recall={overall_recall_corr:.2f}, Overall F1={overall_f1_corr:.2f}, Signed Precision={signed_precision_corr:.2f}, Signed Recall={signed_recall_corr:.2f}, Signed F1={signed_f1_corr:.2f}")
+res = calculate_fit(true_conn, A_init_corr)
+print(f"\nCorrelation: Cosine={res.cosine:.2f}, Pearson={res.pearson:.2f}, Spearman={res.spearman:.2f}, Overall Precision={res.overall_precision:.2f}, Overall Recall={res.overall_recall:.2f}, Overall F1={res.overall_f1:.2f}, Signed Precision={res.signed_precision:.2f}, Signed Recall={res.signed_recall:.2f}, Signed F1={res.signed_f1:.2f}, MCC={res.mcc_unsigned:.2f}, Signed MCC={res.mcc_signed:.2f}, AUROC={res.auroc:.2f}, NIE={res.nie:.2f}")
 
 # Baseline: Signed Correlation
 A_init_path_corr = os.path.join(f"{data_loc}/signed_correlation.npy")
@@ -121,8 +121,8 @@ A_init_corr = np.load(A_init_path_corr)
 A_init_corr = np.round(A_init_corr, 3)
 
 do_plot(A_init_corr, 'signed_correlation')
-cosine_corr, pearson_corr, spearman_corr, overall_precision_corr, overall_recall_corr, overall_f1_corr, signed_precision_corr, signed_recall_corr, signed_f1_corr = calculate_fit(true_conn, A_init_corr)
-print(f"\nSigned Correlation: Cosine={cosine_corr:.2f}, Pearson={pearson_corr:.2f}, Spearman={spearman_corr:.2f}, Overall Precision={overall_precision_corr:.2f}, Overall Recall={overall_recall_corr:.2f}, Overall F1={overall_f1_corr:.2f}, Signed Precision={signed_precision_corr:.2f}, Signed Recall={signed_recall_corr:.2f}, Signed F1={signed_f1_corr:.2f}")
+res = calculate_fit(true_conn, A_init_corr)
+print(f"\nSigned Correlation: Cosine={res.cosine:.2f}, Pearson={res.pearson:.2f}, Spearman={res.spearman:.2f}, Overall Precision={res.overall_precision:.2f}, Overall Recall={res.overall_recall:.2f}, Overall F1={res.overall_f1:.2f}, Signed Precision={res.signed_precision:.2f}, Signed Recall={res.signed_recall:.2f}, Signed F1={res.signed_f1:.2f}, MCC={res.mcc_unsigned:.2f}, Signed MCC={res.mcc_signed:.2f}, AUROC={res.auroc:.2f}, NIE={res.nie:.2f}")
 
 # Baseline: Mutual information
 A_init_path_mi = os.path.join(f"{data_loc}/signed_mutual_information.npy")
@@ -130,8 +130,8 @@ A_init_mi = np.load(A_init_path_mi)
 A_init_mi = np.round(A_init_mi, 3)
 
 do_plot(A_init_mi, 'signed_mutual_information')
-cosine_mi, pearson_mi, spearman_mi, overall_precision_mi, overall_recall_mi, overall_f1_mi, signed_precision_mi, signed_recall_mi, signed_f1_mi = calculate_fit(true_conn, A_init_mi)
-print(f"\nSigned Mutual Information: Cosine={cosine_mi:.2f}, Pearson={pearson_mi:.2f}, Spearman={spearman_mi:.2f}, Overall Precision={overall_precision_mi:.2f}, Overall Recall={overall_recall_mi:.2f}, Overall F1={overall_f1_mi:.2f}, Signed Precision={signed_precision_mi:.2f}, Signed Recall={signed_recall_mi:.2f}, Signed F1={signed_f1_mi:.2f}")
+res = calculate_fit(true_conn, A_init_mi)
+print(f"\nSigned Mutual Information: Cosine={res.cosine:.2f}, Pearson={res.pearson:.2f}, Spearman={res.spearman:.2f}, Overall Precision={res.overall_precision:.2f}, Overall Recall={res.overall_recall:.2f}, Overall F1={res.overall_f1:.2f}, Signed Precision={res.signed_precision:.2f}, Signed Recall={res.signed_recall:.2f}, Signed F1={res.signed_f1:.2f}, MCC={res.mcc_unsigned:.2f}, Signed MCC={res.mcc_signed:.2f}, AUROC={res.auroc:.2f}, NIE={res.nie:.2f}")
 
 # Baseline: Transfer entropy
 A_init_path_te = os.path.join(f"{data_loc}/signed_transfer_entropy.npy")
@@ -139,5 +139,5 @@ A_init_te = np.load(A_init_path_te)
 A_init_te = np.round(A_init_te, 3)
 
 do_plot(A_init_te, 'signed_transfer_entropy')
-cosine_te, pearson_te, spearman_te, overall_precision_te, overall_recall_te, overall_f1_te, signed_precision_te, signed_recall_te, signed_f1_te = calculate_fit(true_conn, A_init_te)
-print(f"\nSigned Transfer Entropy: Cosine={cosine_te:.2f}, Pearson={pearson_te:.2f}, Spearman={spearman_te:.2f}, Overall Precision={overall_precision_te:.2f}, Overall Recall={overall_recall_te:.2f}, Overall F1={overall_f1_te:.2f}, Signed Precision={signed_precision_te:.2f}, Signed Recall={signed_recall_te:.2f}, Signed F1={signed_f1_te:.2f}")
+res = calculate_fit(true_conn, A_init_te)
+print(f"\nSigned Transfer Entropy: Cosine={res.cosine:.2f}, Pearson={res.pearson:.2f}, Spearman={res.spearman:.2f}, Overall Precision={res.overall_precision:.2f}, Overall Recall={res.overall_recall:.2f}, Overall F1={res.overall_f1:.2f}, Signed Precision={res.signed_precision:.2f}, Signed Recall={res.signed_recall:.2f}, Signed F1={res.signed_f1:.2f}, MCC={res.mcc_unsigned:.2f}, Signed MCC={res.mcc_signed:.2f}, AUROC={res.auroc:.2f}, NIE={res.nie:.2f}")
