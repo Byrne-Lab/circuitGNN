@@ -120,7 +120,7 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
         delta_t=[3e-3, 5e-3, 7e-3, 10e-3, 20e-3, 30e-3]))
 
     methods.update(factorial(GLMCC, 'glmcc',
-        binsize=[1e-3, 2e-3, 5e-3, 10e-3], # drop binsize=10e-3 if slow
+        binsize=[1e-3, 5e-3, 10e-3], # dropped 2e-3, drop binsize=10e-3 if slow
         syn_delay=[1e-3, 3e-3, 5e-3, 10e-3]))
 
     methods.update(ofat(GLMPP, 'glmpp',
