@@ -44,6 +44,12 @@ ARCHITECTURES = {
         "encoder_kwargs": dict(**_BASE_ENC),
         "gnn_kwargs": dict(**_BASE_GNN),
     },
+    # baseline + reciprocity penalty: discourages mirror exc/inh edge pairs (forward-excitatory at (i,j) coexisting with reverse-inhibitory at (j,i))
+    "baseline_reciprocity": {
+        "config": {**_BASE_CFG, "model_type": "standard", "reciprocity_lambda": 1e-1},
+        "encoder_kwargs": dict(**_BASE_ENC),
+        "gnn_kwargs": dict(**_BASE_GNN),
+    },
     # presynaptic neuron can only be inhibitory or excitatory, not both
     "dales": {
         "config": {**_BASE_CFG, "model_type": "dales", "competitive_lambda": 0.0},
@@ -129,6 +135,17 @@ ARCHITECTURES = {
         "gnn_kwargs": dict(**_BASE_GNN),
     },
 }
+
+# Sweep over gamma_r
+_RECIP_GAMMA_GRID = [1e-3, 1e-2, 3e-2, 3e-1, 1e0]
+def _gamma_tag(g: float) -> str:
+    return f"{g:g}".replace(".", "p").replace("-", "m")
+for _g in _RECIP_GAMMA_GRID:
+    ARCHITECTURES[f"baseline_recip_{_gamma_tag(_g)}"] = {
+        "config": {**_BASE_CFG, "model_type": "standard", "reciprocity_lambda": _g},
+        "encoder_kwargs": dict(**_BASE_ENC),
+        "gnn_kwargs": dict(**_BASE_GNN),
+    }
 
 DATASET_REGISTRY = {
     "yuto": {
@@ -226,6 +243,7 @@ def run_dataset_architecture(
             lr=acfg.get("lr", 1e-4),
             l1_lambda=acfg.get("l1_lambda", 5e-2),
             competitive_lambda=acfg.get("competitive_lambda", 1e-1),
+            reciprocity_lambda=acfg.get("reciprocity_lambda", 0.0),
             indirect_lambda=acfg.get("indirect_lambda", 0.0),
             k_steps=acfg.get("k_steps", 1),
             model_type=acfg.get("model_type", "standard"),

@@ -12,7 +12,6 @@ import time
 import itertools
 from circuit_gnn.data import *
 from circuit_gnn.utils import *
-
 from spycon.coninf import CoincidenceIndex, Smoothed_CCG, directed_STTC, GLMCC, GLMPP
 
 data_map = {
@@ -120,7 +119,7 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
         delta_t=[3e-3, 5e-3, 7e-3, 10e-3, 20e-3, 30e-3]))
 
     methods.update(factorial(GLMCC, 'glmcc',
-        binsize=[1e-3, 5e-3, 10e-3], # dropped 2e-3, drop binsize=10e-3 if slow
+        binsize=[1e-3],
         syn_delay=[1e-3, 3e-3, 5e-3, 10e-3]))
 
     methods.update(ofat(GLMPP, 'glmpp',

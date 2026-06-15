@@ -23,6 +23,7 @@ class TrainConfig:
     lr: float = 1e-4
     l1_lambda: float = 0.0
     competitive_lambda: float = 0.0
+    reciprocity_lambda: float = 0.0
     indirect_lambda: float = 0.0
     k_steps: int = 1            # >1 activates MultiStepSpikeTrainDataset
     model_type: str = "standard"  # "standard"|"dales"|"indirect_filter"|"skip"|"edge_cond"|"split_path"|"multi_step"|"hadamard_mod"|"learned_scale"|"diff"|"softmax"|"per_neuron_self"|"gated"|"adaptive"|"relu_message"
@@ -121,6 +122,7 @@ def compute_loss(
     criterion: nn.Module,
     l1_lambda: float = 5e-2,
     competitive_lambda: float = 1e-1,
+    reciprocity_lambda: float = 0.0,
     indirect_lambda: float = 0.0,
     model: Optional[nn.Module] = None,
 ) -> torch.Tensor:
@@ -140,6 +142,15 @@ def compute_loss(
             ).sum()
             loss = loss + l1_adj + competitive_penalty
 
+            # reciprocity penalty: discourage a mirror edge pair where (i,j) is
+            # excitatory and (j,i) is inhibitory (the antisymmetric "lead-lag"
+            # artifact). Transpose of the competitive penalty's exc/inh coupling.
+            if reciprocity_lambda > 0.0:
+                reciprocity_penalty = reciprocity_lambda * (
+                    torch.relu(model.learned_adj_exc) * torch.relu(model.learned_adj_inh).t()
+                ).sum()
+                loss = loss + reciprocity_penalty
+
         if indirect_lambda > 0.0 and hasattr(model, 'get_adjacency'):
             A = model.get_adjacency()
             A_two_hop = (A @ A).detach()
@@ -157,6 +168,7 @@ def train_epoch(
     device: str,
     competitive_lambda: float = 1e-1,
     l1_lambda: float = 5e-2,
+    reciprocity_lambda: float = 0.0,
     indirect_lambda: float = 0.0,
 ) -> float:
     encoder.train()
@@ -172,7 +184,7 @@ def train_epoch(
         outputs = gnn(embeddings)
         loss = compute_loss(
             outputs, targets, criterion,
-            l1_lambda, competitive_lambda, indirect_lambda,
+            l1_lambda, competitive_lambda, reciprocity_lambda, indirect_lambda,
             model=gnn,
         )
         loss.backward()
@@ -254,6 +266,7 @@ def train_model(
             encoder, gnn, train_loader, optimizer, criterion, device,
             config.competitive_lambda,
             config.l1_lambda,
+            config.reciprocity_lambda,
             config.indirect_lambda,
         )
         history["train_loss"].append(train_loss)
