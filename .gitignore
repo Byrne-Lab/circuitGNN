@@ -9,3 +9,4 @@ claude_notes.txt
 *.so
 benchmarks/CoNNECT/modules/build/
 benchmarks/CoNNECT/modules/sources/crosscorrelogram.c
+toy_phantom
