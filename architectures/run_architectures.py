@@ -105,11 +105,11 @@ ARCHITECTURES = {
         "gnn_kwargs": dict(**_BASE_GNN),
     },
     # Transformer-style row-wise softmax over incoming edges (learnable temperature)
-    "softmax": {
-        "config": {**_BASE_CFG, "model_type": "softmax"},
-        "encoder_kwargs": dict(**_BASE_ENC),
-        "gnn_kwargs": dict(**_BASE_GNN),
-    },
+    # "softmax": {
+    #    "config": {**_BASE_CFG, "model_type": "softmax"},
+    #    "encoder_kwargs": dict(**_BASE_ENC),
+    #    "gnn_kwargs": dict(**_BASE_GNN),
+    #},
     # learnable per-neuron self-term scale vector
     "per_neuron_self": {
         "config": {**_BASE_CFG, "model_type": "per_neuron_self"},

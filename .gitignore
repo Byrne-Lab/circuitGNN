@@ -5,3 +5,7 @@ archive/
 datasets/
 results_old/
 claude_notes.txt
+*.pyd
+*.so
+benchmarks/CoNNECT/modules/build/
+benchmarks/CoNNECT/modules/sources/crosscorrelogram.c
