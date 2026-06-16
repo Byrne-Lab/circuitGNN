@@ -134,6 +134,13 @@ ARCHITECTURES = {
         "encoder_kwargs": dict(**_BASE_ENC),
         "gnn_kwargs": dict(**_BASE_GNN),
     },
+    # autoregressive-residual: self head predicts each neuron from its own history
+    # first; the graph explains only the residual (kills phantom reciprocal edges)
+    "ar_residual": {
+        "config": {**_BASE_CFG, "model_type": "ar_residual"},
+        "encoder_kwargs": dict(**_BASE_ENC),
+        "gnn_kwargs": dict(**_BASE_GNN, self_aux_lambda=50.0),
+    },
 }
 
 _RECIP_GAMMA_GRID = [1e-3, 1e-2, 3e-2, 3e-1, 1e0, 3e0, 1e1, 3e1, 1e2]
@@ -168,13 +175,13 @@ DATASET_REGISTRY = {
     "small_circuit_A": {
         "loader": load_small_circuit_A_network,
         "loader_kwargs": {"downsample_factor": 20},
-        "num_epochs": 20,
+        "num_epochs": 8,
         "default_window": 100,
     },
     "small_circuit_B": {
         "loader": load_small_circuit_B_network,
         "loader_kwargs": {"downsample_factor": 20},
-        "num_epochs": 20,
+        "num_epochs": 8,
         "default_window": 100,
     },
 }

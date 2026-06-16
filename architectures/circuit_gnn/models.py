@@ -741,3 +741,62 @@ class ReLUMessageGNN(GraphNeuralNetwork):
             in_dim = embedding_dim if i == 0 else hidden_dim
             layers.append(ReLUMessageGNNLayer(in_dim, hidden_dim, self_scale=self_scale))
         return layers
+
+
+# ===========================================================================
+# Autoregressive residual: condition on each neuron's own history first, then
+# let the graph explain only the residual (conditional-Granger inductive bias)
+# ===========================================================================
+
+class ARResidualGNN(GraphNeuralNetwork):
+    """Autoregressive-residual model that conditions on a neuron's own history first.
+
+    A per-neuron self head predicts the next-bin logit from that neuron's OWN
+    embedding alone. The graph message-passing path (inherited layers + fc_out)
+    predicts only the residual the self head cannot explain:
+
+        logit_i = self_pred_i.detach() + residual_i
+
+    The detach routes the main loss entirely onto the residual path (it must fit
+    target - self_pred), while an auxiliary loss (added in compute_loss when
+    ``last_self_pred`` is exposed) trains the self head to be a strong standalone
+    predictor. Consequence: a downstream neuron that is merely a delayed copy of
+    its source carries no information about the source beyond the source's own
+    history, so the residual gives it no gradient and the phantom reverse edge
+    never forms — while a genuine source (which adds predictive info beyond the
+    target's own past) still earns its forward edge.
+
+    Only the parameterization of the prediction differs; get_adjacency() and the
+    connectivity parameters are inherited unchanged, so the same penalties,
+    ablation and extraction all work as for the baseline.
+    """
+
+    def __init__(self, num_neurons, self_aux_lambda=1.0, **kwargs):
+        super().__init__(num_neurons, **kwargs)
+        embedding_dim = kwargs.get('embedding_dim', 64)
+        hidden_dim = kwargs.get('hidden_dim', 64)
+        output_dim = kwargs.get('output_dim', 1)
+        self.self_head = nn.Sequential(
+            nn.Linear(embedding_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, output_dim),
+        )
+        self.self_aux_lambda = self_aux_lambda
+        # stashed each forward so compute_loss can add the auxiliary self-loss
+        self.last_self_pred = None
+
+    def forward(self, embeddings):
+        # self head: predict the target from each neuron's OWN embedding only
+        self_pred = self.self_head(embeddings).squeeze(-1)   # (batch, N)
+        self.last_self_pred = self_pred
+
+        # graph path predicts the residual the self head cannot explain
+        A = self.get_adjacency() * self.A_scale
+        x = embeddings
+        for layer in self.layers:
+            x = layer(x, A)
+        residual = self.fc_out(x).squeeze(-1)                # (batch, N)
+
+        # detach: the main loss trains the residual path against (target - self_pred);
+        # the self head is trained solely by the auxiliary loss in compute_loss
+        return self_pred.detach() + residual

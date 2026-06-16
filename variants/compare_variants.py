@@ -27,7 +27,8 @@ REPO_ROOT = VARIANTS_DIR.parent
 sys.path.insert(0, str(VARIANTS_DIR))
 os.chdir(str(REPO_ROOT))
 
-from circuit_gnn.data import load_yuto_network, load_pdcm_network, load_arbitrary_network
+from circuit_gnn.data import (load_yuto_network, load_pdcm_network, load_arbitrary_network,
+                              load_small_circuit_A_network, load_small_circuit_B_network)
 from circuit_gnn.utils import (calculate_fit, align_matrices,
                                 get_consistent_connections, get_top_k, sign_inference,
                                 plot_connectivity_matrix, plot_pdcm_matrix,
@@ -36,9 +37,11 @@ from circuit_gnn.utils import (calculate_fit, align_matrices,
 RESULTS_BASE = VARIANTS_DIR / "results"
 
 DATASET_REGISTRY = {
-    "yuto":      {"loader": load_yuto_network,     "loader_kwargs": {"downsample_factor": 20, "gap": 0.20, "step": 1}},
-    "arbitrary": {"loader": load_arbitrary_network, "loader_kwargs": {"downsample_factor": 10}},
-    "pdcm":      {"loader": load_pdcm_network,      "loader_kwargs": {"downsample_factor": 2}},
+    "yuto":            {"loader": load_yuto_network,            "loader_kwargs": {"downsample_factor": 20, "gap": 0.20, "step": 1}},
+    "arbitrary":       {"loader": load_arbitrary_network,       "loader_kwargs": {"downsample_factor": 10}},
+    "pdcm":            {"loader": load_pdcm_network,            "loader_kwargs": {"downsample_factor": 2}},
+    "small_circuit_A": {"loader": load_small_circuit_A_network, "loader_kwargs": {"downsample_factor": 20}},
+    "small_circuit_B": {"loader": load_small_circuit_B_network, "loader_kwargs": {"downsample_factor": 20}},
 }
 
 ALL_VARIANTS = [
@@ -114,7 +117,7 @@ def load_variant_results(
 
 def main():
     parser = argparse.ArgumentParser(description="Compare circuitGNN variant results")
-    parser.add_argument("--dataset", required=True, choices=list(DATASET_REGISTRY.keys()))
+    parser.add_argument("--datasets", required=True, choices=list(DATASET_REGISTRY.keys()))
     parser.add_argument("--variants", nargs="+", default=ALL_VARIANTS,
                         help="Variants to compare (default: all)")
     parser.add_argument("--ablation_threshold", type=float, default=0.20,
@@ -190,7 +193,7 @@ def main():
     print(df.to_string())
     print()
 
-    csv_path = VARIANTS_DIR / f"variant_comparison_{args.dataset}_thr{args.ablation_threshold}.csv"
+    csv_path = VARIANTS_DIR / f"variant_{args.dataset}.csv"
     df.to_csv(csv_path)
     print(f"Saved full metrics table to {csv_path}")
 

@@ -12,7 +12,7 @@ from .models import (GraphNeuralNetwork, SpikeEncoder,
                      SkipGNN, EdgeCondGNN, SplitPathGNN, MultiStepGNN,
                      HadamardModGNN, LearnedScaleGNN, DiffGNN,
                      SoftmaxGNN, PerNeuronSelfScaleGNN, GatedGNN, AdaptiveGNN,
-                     ReLUMessageGNN)
+                     ReLUMessageGNN, ARResidualGNN)
 
 
 @dataclass
@@ -110,6 +110,8 @@ def build_models(
         gnn = AdaptiveGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
     elif model_type == "relu_message":
         gnn = ReLUMessageGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
+    elif model_type == "ar_residual":
+        gnn = ARResidualGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
     else:
         gnn = GraphNeuralNetwork(num_neurons=num_neurons, **gnn_kwargs).to(device)
 
@@ -155,6 +157,13 @@ def compute_loss(
             A = model.get_adjacency()
             A_two_hop = (A @ A).detach()
             loss = loss + indirect_lambda * (A * A_two_hop.abs()).abs().sum()
+
+        # ar_residual: train the per-neuron self head to predict the target from
+        # the neuron's own history alone, so the graph path only fits the residual.
+        self_pred = getattr(model, 'last_self_pred', None)
+        self_aux_lambda = getattr(model, 'self_aux_lambda', 0.0)
+        if self_pred is not None and self_aux_lambda > 0.0:
+            loss = loss + self_aux_lambda * criterion(self_pred, targets)
 
     return loss
 

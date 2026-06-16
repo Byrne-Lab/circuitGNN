@@ -1,9 +1,9 @@
 """Compare trained architecture results for circuitGNN.
 
 Run from repo root after running run_architectures.py:
-    python architectures/compare_architectures.py --dataset yuto
-    python architectures/compare_architectures.py --dataset pdcm --architectures baseline dales
-    python architectures/compare_architectures.py --dataset yuto --ablation_threshold 0.10
+    python architectures/compare_architectures.py --datasets yuto
+    python architectures/compare_architectures.py --datasets pdcm --architectures baseline dales
+    python architectures/compare_architectures.py --datasets yuto --ablation_threshold 0.10
 
 Prints a table and saves a CSV (architecture_comparison_<dataset>_thr<threshold>.csv) with all
 metrics (cosine, pearson, spearman, unsigned/signed F1, unsigned/signed MCC, AUROC, NIE) for both
@@ -85,7 +85,7 @@ def load_architecture_results(
 
 def main():
     parser = argparse.ArgumentParser(description="Compare circuitGNN architecture results")
-    parser.add_argument("--dataset", required=True, choices=list(DATASET_REGISTRY.keys()))
+    parser.add_argument("--datasets", required=True, choices=list(DATASET_REGISTRY.keys()))
     parser.add_argument("--architectures", nargs="+", default=ALL_ARCHITECTURES,
                         help="Architectures to compare (default: all)")
     parser.add_argument("--ablation_threshold", type=float, default=0.20,
@@ -161,7 +161,7 @@ def main():
     print(df.to_string())
     print()
 
-    csv_path = ARCH_DIR / f"architecture_comparison_{args.dataset}_thr{args.ablation_threshold}.csv"
+    csv_path = ARCH_DIR / f"architecture_{args.dataset}.csv"
     df.to_csv(csv_path)
     print(f"Saved full metrics table to {csv_path}")
 
