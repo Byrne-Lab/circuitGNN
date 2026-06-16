@@ -136,8 +136,7 @@ ARCHITECTURES = {
     },
 }
 
-# Sweep over gamma_r
-_RECIP_GAMMA_GRID = [1e-3, 1e-2, 3e-2, 3e-1, 1e0]
+_RECIP_GAMMA_GRID = [1e-3, 1e-2, 3e-2, 3e-1, 1e0, 3e0, 1e1, 3e1, 1e2]
 def _gamma_tag(g: float) -> str:
     return f"{g:g}".replace(".", "p").replace("-", "m")
 for _g in _RECIP_GAMMA_GRID:
