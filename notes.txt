@@ -1,9 +1,3 @@
-# Script for completing search over small circuit A
-python .\variants\run_variants.py --datasets small_circuit_A --variants hidden_64 hidden_128 lr_1e-5 lr_5e-5 lr_1e-4 lr_5e-4 kernel_2_channels_8 kernel_2_channels_16 kernel_2_channels_32 kernel_2_channels_64 kernel_3_channels_8 kernel_3_channels_16 kernel_3_channels_32 kernel_3_channels_64 kernel_4_channels_8 kernel_4_channels_16 kernel_4_channels_32 kernel_4_channels_64 emb_16_hidden_16 emb_16_hidden_32 emb_16_hidden_64 emb_16_hidden_128 emb_32_hidden_16 emb_32_hidden_32 emb_32_hidden_64 emb_32_hidden_128 emb_64_hidden_16 emb_64_hidden_32 emb_64_hidden_64 emb_64_hidden_128 emb_128_hidden_16 emb_128_hidden_32 emb_128_hidden_64 emb_128_hidden_128
-
-# For yuto
-python .\variants\run_variants.py --datasets yuto --variants kernel_2_channels_8 kernel_2_channels_16 kernel_2_channels_32 kernel_2_channels_64 kernel_3_channels_8 kernel_3_channels_16 kernel_3_channels_32 kernel_3_channels_64 kernel_4_channels_8 kernel_4_channels_16 kernel_4_channels_32 kernel_4_channels_64 emb_16_hidden_16 emb_16_hidden_32 emb_16_hidden_64 emb_16_hidden_128 emb_32_hidden_16 emb_32_hidden_32 emb_32_hidden_64 emb_32_hidden_128 emb_64_hidden_16 emb_64_hidden_32 emb_64_hidden_64 emb_64_hidden_128 emb_128_hidden_16 emb_128_hidden_32 emb_128_hidden_64 emb_128_hidden_128
-
 # GLM run times
 (py311_env) PS C:\Users\agupta17\Documents\GitHub\circuitGNN> python .\benchmarks\standard\run_glm.py
 (14, 480000)
