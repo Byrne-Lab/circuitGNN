@@ -10,13 +10,17 @@ import seaborn as sns
 import warnings
 warnings.filterwarnings("ignore")
 
-def load_arbitrary_network(downsample_factor = 10, gap=-1, step=-1):
+from circuit_gnn.optimal_bin_size import resolve_downsample
+
+def load_arbitrary_network(downsample_factor = 'auto', gap=-1, step=-1):
     """
     Load the arbitrary SNNAP simulation dataset.
 
     Parameters
     ----------
-    downsample_factor : int
+    downsample_factor : int or 'auto'
+        If 'auto' (default), the bin is chosen by occupancy (see
+        circuit_gnn.optimal_bin_size); otherwise used as below.
         Bin size in ms (e.g. 10 -> 10 ms bins). Native resolution is 1 ms.
     gap : ignored
         Kept for API compatibility with other loaders.
@@ -67,7 +71,8 @@ def load_arbitrary_network(downsample_factor = 10, gap=-1, step=-1):
             sp = sp[mask]
             binned_spikes[i, sp] = 1
 
-    # downsample
+    # downsample (native resolution is 1 ms; resolve 'auto' via occupancy)
+    downsample_factor = resolve_downsample(downsample_factor, binned_spikes, 1.0)
     binned_spikes = binned_spikes[:, :binned_spikes.shape[1] // downsample_factor * downsample_factor]
     binned_spikes = binned_spikes.reshape(binned_spikes.shape[0], -1, downsample_factor).sum(2)
     print(binned_spikes.shape)
@@ -127,13 +132,15 @@ def load_arbitrary_network(downsample_factor = 10, gap=-1, step=-1):
     return binned_spikes, true_conn, neuron_names
 
 
-def load_yuto_network(downsample_factor = 20, gap=0.20, step=1):
+def load_yuto_network(downsample_factor = 'auto', gap=0.20, step=1):
     """
     Load the Yuto compartmental neuron simulation dataset.
 
     Parameters
     ----------
-    downsample_factor : int
+    downsample_factor : int or 'auto'
+        If 'auto' (default), the bin is chosen by occupancy (see
+        circuit_gnn.optimal_bin_size); otherwise used as below.
         Bin size in ms (e.g. 20 -> 10 ms bins, 10 -> 5 ms bins).
         Native resolution is 0.5 ms.
     gap : float
@@ -208,7 +215,8 @@ def load_yuto_network(downsample_factor = 20, gap=0.20, step=1):
 
     print(binned_spikes.shape)
 
-    # downsample
+    # downsample (native resolution is 0.5 ms; resolve 'auto' via occupancy)
+    downsample_factor = resolve_downsample(downsample_factor, binned_spikes, 0.5)
     binned_spikes = binned_spikes[:, :binned_spikes.shape[1] // downsample_factor * downsample_factor]
     binned_spikes = binned_spikes.reshape(binned_spikes.shape[0], -1, downsample_factor).sum(2)
     print(binned_spikes.shape)
@@ -235,13 +243,15 @@ def load_yuto_network(downsample_factor = 20, gap=0.20, step=1):
     return binned_spikes, true_conn, neuron_names
 
 
-def load_small_circuit_A_network(downsample_factor = 20, gap=0.20, step=1):
+def load_small_circuit_A_network(downsample_factor = 'auto', gap=0.20, step=1):
     """
     Load the small circuit A simulation dataset froM Cai et al.
 
     Parameters
     ----------
-    downsample_factor : int
+    downsample_factor : int or 'auto'
+        If 'auto' (default), the bin is chosen by occupancy (see
+        circuit_gnn.optimal_bin_size); otherwise used as below.
         Bin size in ms (e.g. 20 -> 10 ms bins, 10 -> 5 ms bins).
         Native resolution is 0.5 ms.
 
@@ -307,7 +317,8 @@ def load_small_circuit_A_network(downsample_factor = 20, gap=0.20, step=1):
 
     print(binned_spikes.shape)
 
-    # downsample
+    # downsample (native resolution is 0.5 ms; resolve 'auto' via occupancy)
+    downsample_factor = resolve_downsample(downsample_factor, binned_spikes, 0.5)
     binned_spikes = binned_spikes[:, :binned_spikes.shape[1] // downsample_factor * downsample_factor]
     binned_spikes = binned_spikes.reshape(binned_spikes.shape[0], -1, downsample_factor).sum(2)
     print(binned_spikes.shape)
@@ -334,13 +345,15 @@ def load_small_circuit_A_network(downsample_factor = 20, gap=0.20, step=1):
     return binned_spikes, true_conn, neuron_names
 
 
-def load_small_circuit_B_network(downsample_factor = 20, gap=0.20, step=1):
+def load_small_circuit_B_network(downsample_factor = 'auto', gap=0.20, step=1):
     """
     Load the small circuit B simulation dataset froM Cai et al.
 
     Parameters
     ----------
-    downsample_factor : int
+    downsample_factor : int or 'auto'
+        If 'auto' (default), the bin is chosen by occupancy (see
+        circuit_gnn.optimal_bin_size); otherwise used as below.
         Bin size in ms (e.g. 20 -> 10 ms bins, 10 -> 5 ms bins).
         Native resolution is 0.5 ms.
 
@@ -407,7 +420,8 @@ def load_small_circuit_B_network(downsample_factor = 20, gap=0.20, step=1):
 
     print(binned_spikes.shape)
 
-    # downsample
+    # downsample (native resolution is 0.5 ms; resolve 'auto' via occupancy)
+    downsample_factor = resolve_downsample(downsample_factor, binned_spikes, 0.5)
     binned_spikes = binned_spikes[:, :binned_spikes.shape[1] // downsample_factor * downsample_factor]
     binned_spikes = binned_spikes.reshape(binned_spikes.shape[0], -1, downsample_factor).sum(2)
     print(binned_spikes.shape)
@@ -434,13 +448,15 @@ def load_small_circuit_B_network(downsample_factor = 20, gap=0.20, step=1):
     return binned_spikes, true_conn, neuron_names
 
 
-def load_pdcm_network(downsample_factor=2, gap=0, step=0):
+def load_pdcm_network(downsample_factor='auto', gap=0, step=0):
     """
     Load the PDCM NetPyNE simulation dataset.
 
     Parameters
     ----------
-    downsample_factor : int
+    downsample_factor : int or 'auto'
+        If 'auto' (default), the bin is chosen by occupancy (see
+        circuit_gnn.optimal_bin_size); otherwise used as below.
         Bin size in ms (e.g. 10 -> 10 ms bins)
     gap : ignored
         Kept for API compatibility with other loaders.
@@ -467,6 +483,15 @@ def load_pdcm_network(downsample_factor=2, gap=0, step=0):
     neuron_names = list(pop_labels)
 
     print(spkt.shape, spkid.shape)
+
+    # resolve 'auto' from a native 1 ms binning before choosing the final bin
+    if isinstance(downsample_factor, str):
+        native_bins = int(sim_dur_ms // 1)
+        native = np.zeros((n_neurons, native_bins), dtype=np.int32)
+        nt_idx = np.floor(spkt / 1).astype(int)
+        nvalid = (nt_idx >= 0) & (nt_idx < native_bins)
+        np.add.at(native, (spkid.astype(int)[nvalid], nt_idx[nvalid]), 1)
+        downsample_factor = resolve_downsample(downsample_factor, native, 1.0)
 
     n_bins = int(sim_dur_ms // downsample_factor)
     binned_spikes = np.zeros((n_neurons, n_bins), dtype=np.int32)
@@ -534,13 +559,15 @@ def load_pdcm_network(downsample_factor=2, gap=0, step=0):
     return binned_spikes, true_conn, neuron_names
 
 
-def load_v1_network(downsample_factor=2, gap=0, step=0):
+def load_v1_network(downsample_factor='auto', gap=0, step=0):
     """
     Load the multi-area-model V1 simulation dataset.
 
     Parameters
     ----------
-    downsample_factor : int
+    downsample_factor : int or 'auto'
+        If 'auto' (default), the bin is chosen by occupancy (see
+        circuit_gnn.optimal_bin_size); otherwise used as below.
         Bin size in ms (e.g. 10 -> 10 ms bins).
     gap : ignored
         Kept for API compatibility with other loaders.
@@ -587,6 +614,15 @@ def load_v1_network(downsample_factor=2, gap=0, step=0):
     spike_idx = spike_data[:, 0].astype(int)
     spike_times_ms = spike_data[:, 1]
     sim_dur_ms = spike_times_ms.max()
+
+    # resolve 'auto' from a native 1 ms binning before choosing the final bin
+    if isinstance(downsample_factor, str):
+        native_bins = int(sim_dur_ms // 1)
+        native = np.zeros((n_neurons, native_bins), dtype=np.int32)
+        nt_idx = np.floor(spike_times_ms / 1).astype(int)
+        nvalid = (nt_idx >= 0) & (nt_idx < native_bins)
+        np.add.at(native, (spike_idx[nvalid], nt_idx[nvalid]), 1)
+        downsample_factor = resolve_downsample(downsample_factor, native, 1.0)
 
     n_bins = int(sim_dur_ms // downsample_factor)
     binned_spikes = np.zeros((n_neurons, n_bins), dtype=np.int32)

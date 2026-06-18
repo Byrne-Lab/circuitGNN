@@ -4,6 +4,7 @@ _root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "src"))
 from benchmarks.standard.glm import calculate_glm
+from benchmarks.standard.utils import threshold_top_k
 import numpy as np
 import os
 import time
@@ -15,6 +16,7 @@ data_map = {
     'arbitrary': load_arbitrary_network,
     'pdcm': load_pdcm_network,
 }
+
 
 for data in ['yuto', 'arbitrary', 'pdcm']:
 
@@ -36,5 +38,9 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
     glm_conn = calculate_glm(binned_spikes, dt_ms=1.0)
     print(f"GLM time: {(time.time() - start) / 60:.2f} min")
 
+    glm_threshold = threshold_top_k(glm_conn, true_conn)
+
     np.save(f"{save_dir}/glm.npy", glm_conn)
+    np.save(f"{save_dir}/glm_threshold.npy", glm_threshold)
     plot_connectivity_matrix(glm_conn, neuron_names, "GLM", save_dir=save_dir, plot_val=False)
+    plot_connectivity_matrix(glm_threshold, neuron_names, "GLM_threshold", save_dir=save_dir, plot_val=False)

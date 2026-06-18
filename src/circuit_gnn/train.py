@@ -86,11 +86,11 @@ def compute_loss(
 ) -> torch.Tensor:
     loss = criterion(predictions, targets)
     if model is not None:
-        # if l1_lambda > 0.0 and hasattr(model, 'learned_adj_exc') and hasattr(model, 'learned_adj_inh'):
+
         l1_adj = l1_lambda * (torch.log(1 + torch.abs(model.learned_adj_exc)).sum() + torch.log(1 + torch.abs(model.learned_adj_inh)).sum())
-        # if competitive_lambda > 0.0 and hasattr(model, 'learned_adj_exc') and hasattr(model, 'learned_adj_inh'):
-        competitive_penalty = competitive_lambda * (model.learned_adj_exc * model.learned_adj_inh).sum()
+        competitive_penalty = competitive_lambda * (torch.relu(model.learned_adj_exc) * torch.relu(model.learned_adj_inh)).sum()
         loss = loss + l1_adj+ competitive_penalty
+        
     return loss
 
 

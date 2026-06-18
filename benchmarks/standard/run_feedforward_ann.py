@@ -42,7 +42,7 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
     elapsed = time.time() - start_time
     print(f"Frolov ANN calculation time: {elapsed/60:.2f} minutes")
 
-    np.save(f"{save_dir}/frolov_r2.npy", r2_matrix)
+    # np.save(f"{save_dir}/frolov_r2.npy", r2_matrix)
     np.save(f"{save_dir}/frolov_conn.npy", conn_matrix)
-    plot_connectivity_matrix(r2_matrix, neuron_names, "Frolov ANN R²", save_dir=save_dir, plot_val=False)
+    # plot_connectivity_matrix(r2_matrix, neuron_names, "Frolov ANN R²", save_dir=save_dir, plot_val=False)
     plot_connectivity_matrix(conn_matrix.astype(float), neuron_names, "Frolov ANN Connections", save_dir=save_dir, plot_val=False)

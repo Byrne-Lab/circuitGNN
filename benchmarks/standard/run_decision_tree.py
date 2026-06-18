@@ -9,6 +9,7 @@ from benchmarks.standard.decision_tree import (
     calculate_mcc_matrix,
     calculate_variable_importance_matrix,
 )
+from benchmarks.standard.utils import threshold_top_k
 import numpy as np
 import os
 import time
@@ -47,13 +48,21 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
     mcc_matrix = calculate_mcc_matrix(binned_spikes, window_bins=window_bins, subinterval_bins=subinterval_bins, n_runs=n_runs)
     print(f"MCC matrix time: {(time.time() - start) / 60:.2f} min")
 
+    mcc_threshold = threshold_top_k(mcc_matrix, true_conn)
+
     np.save(f"{save_dir}/decision_tree_mcc.npy", mcc_matrix)
+    np.save(f"{save_dir}/decision_tree_mcc_threshold.npy", mcc_threshold)
     plot_connectivity_matrix(mcc_matrix, neuron_names, "Decision Tree MCC", save_dir=save_dir, plot_val=False,)
+    plot_connectivity_matrix(mcc_threshold, neuron_names, "Decision Tree MCC threshold", save_dir=save_dir, plot_val=False,)
 
     # Variable importance matrix (full model per target)
     start = time.time()
     vi_matrix = calculate_variable_importance_matrix(binned_spikes, window_bins=window_bins, subinterval_bins=subinterval_bins, n_runs=n_runs)
     print(f"Variable importance matrix time: {(time.time() - start) / 60:.2f} min")
 
+    vi_threshold = np.where(vi_matrix > 0, vi_matrix, 0)
+
     np.save(f"{save_dir}/decision_tree_vi.npy", vi_matrix)
+    np.save(f"{save_dir}/decision_tree_vi_threshold.npy", vi_threshold)
     plot_connectivity_matrix(vi_matrix, neuron_names, "Decision Tree Variable Importance", save_dir=save_dir, plot_val=False,)
+    plot_connectivity_matrix(vi_threshold, neuron_names, "Decision Tree Variable Importance threshold", save_dir=save_dir, plot_val=False,)
