@@ -1,13 +1,7 @@
 """Compare trained variant results for circuitGNN.
 
 Run from repo root after running run_variants.py:
-    python variants/compare_variants.py --dataset yuto
-    python variants/compare_variants.py --dataset yuto --variants baseline dales layers_7
-    python variants/compare_variants.py --dataset arbitrary --ablation_threshold 0.10
-
-Prints a table and saves a CSV (variant_comparison_<dataset>_thr<threshold>.csv) with all
-metrics (cosine, pearson, spearman, unsigned/signed F1, unsigned/signed MCC, AUROC, NIE) for both
-the mean and the consistent-mean matrix of each variant.
+    python variants/compare_variants.py --dataset X --variants Y
 """
 
 import os
@@ -27,7 +21,8 @@ REPO_ROOT = VARIANTS_DIR.parent
 sys.path.insert(0, str(VARIANTS_DIR))
 os.chdir(str(REPO_ROOT))
 
-from circuit_gnn.data import (load_yuto_network, load_pdcm_network, load_arbitrary_network,
+from circuit_gnn.data import (load_yuto_network, load_pdcm_network, load_pdcm_large_network,
+                              load_arbitrary_network,
                               load_small_circuit_A_network, load_small_circuit_B_network)
 from circuit_gnn.utils import (calculate_fit, align_matrices,
                                 get_consistent_connections, get_top_k, sign_inference,
@@ -40,6 +35,7 @@ DATASET_REGISTRY = {
     "yuto":            {"loader": load_yuto_network,            "loader_kwargs": {"downsample_factor": 20, "gap": 0.20, "step": 1}},
     "arbitrary":       {"loader": load_arbitrary_network,       "loader_kwargs": {"downsample_factor": 10}},
     "pdcm":            {"loader": load_pdcm_network,            "loader_kwargs": {"downsample_factor": 2}},
+    "pdcm_large":      {"loader": load_pdcm_large_network,      "loader_kwargs": {"downsample_factor": 6}},
     "small_circuit_A": {"loader": load_small_circuit_A_network, "loader_kwargs": {"downsample_factor": 20}},
     "small_circuit_B": {"loader": load_small_circuit_B_network, "loader_kwargs": {"downsample_factor": 20}},
 }
@@ -50,7 +46,7 @@ ALL_VARIANTS = [
     # GNN layers
     "layers_1", "layers_3", "layers_5", "layers_7",
     # bin size
-    "bin_1ms", "bin_2ms", "bin_5ms", "bin_10ms",
+    "bin_1ms", "bin_2ms", "bin_3ms", "bin_4ms", "bin_5ms", "bin_6ms", "bin_7ms", "bin_8ms", "bin_9ms", "bin_10ms", "bin_20ms",
     # window size
     "window_5", "window_10", "window_50", "window_100", "window_200",
     # encoder channels
@@ -58,11 +54,11 @@ ALL_VARIANTS = [
     # encoder kernel size
     "kernel_size_2", "kernel_size_3", "kernel_size_4",
     # L1 regularisation
-    "l1_0", "l1_1e-3", "l1_1e-2", "l1_5e-2", "l1_1e-1",
+    "l1_2p5", "l1_5", "l1_7p5", "l1_10", "l1_15",
     # competitive lambda
-    "comp_0", "comp_1e-2", "comp_1e-1", "comp_1",
+    "comp_5", "comp_10", "comp_15", "comp_20", "comp_30",
     # self_scale
-    "self_0", "self_0p1", "self_0p25", "self_0p5", "self_1",
+    "self_0p1", "self_0p25", "self_0p5", "self_1",
     # embedding dim
     "emb_16", "emb_32", "emb_64", "emb_128",
     # hidden dim
@@ -117,7 +113,7 @@ def load_variant_results(
 
 def main():
     parser = argparse.ArgumentParser(description="Compare circuitGNN variant results")
-    parser.add_argument("--datasets", required=True, choices=list(DATASET_REGISTRY.keys()))
+    parser.add_argument("--dataset", required=True, choices=list(DATASET_REGISTRY.keys()))
     parser.add_argument("--variants", nargs="+", default=ALL_VARIANTS,
                         help="Variants to compare (default: all)")
     parser.add_argument("--ablation_threshold", type=float, default=0.20,
@@ -130,8 +126,8 @@ def main():
     reg = DATASET_REGISTRY[args.dataset]
     _, true_conn, neuron_names = reg["loader"](**reg["loader_kwargs"])
 
-    if args.dataset == "pdcm":
-        pop_labels = np.load("datasets/pdcm/pop_labels.npy")
+    if args.dataset in ("pdcm", "pdcm_large"):
+        pop_labels = np.load(f"datasets/{args.dataset}/pop_labels.npy")
         def do_plot(matrix, method_name, save_dir):
             plot_pdcm_matrix(matrix, pop_labels, method_name=method_name, save_dir=save_dir)
     else:

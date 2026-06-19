@@ -1,9 +1,7 @@
 """Variant sweep runner for circuitGNN.
 
 Run from repo root:
-    python variants/run_variants.py
-    python variants/run_variants.py --datasets yuto --variants batch_4 layers_7 --num_runs 5
-    python variants/run_variants.py --datasets yuto arbitrary --variants bin_half window_200 channels_64 --num_runs 10
+    python variants/run_variants.py --datasets X --variants Y --num_runs Z
 
 Results are written to variants/results/{dataset}/{variant}/.
 """
@@ -18,27 +16,24 @@ from pathlib import Path
 import torch
 import numpy as np
 
-# path setup: put variants/ first so 'circuit_gnn' resolves to variants/circuit_gnn/
 VARIANTS_DIR = Path(__file__).resolve().parent
 REPO_ROOT = VARIANTS_DIR.parent
 sys.path.insert(0, str(VARIANTS_DIR))
 os.chdir(str(REPO_ROOT))
 
-from circuit_gnn.data import load_yuto_network, load_pdcm_network, load_arbitrary_network, load_small_circuit_A_network, load_small_circuit_B_network
+from circuit_gnn.data import load_yuto_network, load_pdcm_network, load_pdcm_large_network, load_arbitrary_network, load_small_circuit_A_network, load_small_circuit_B_network
 from circuit_gnn.train import TrainConfig, train_model, load_checkpoint
 from circuit_gnn.utils import plot_connectivity_matrix, plot_pdcm_matrix
 
 RESULTS_BASE = VARIANTS_DIR / "results"
 
 # variant definitions
-# Each variant specifies overrides on top of the per-dataset defaults.
 # config: TrainConfig field overrides
 # encoder_kwargs / gnn_kwargs: forwarded to build_models
 
 _BASE_ENC = {"conv_out_channels": 32, "embedding_dim": 64, "kernel_size": 3}
-_BASE_GNN = {"embedding_dim": 64, "hidden_dim": 64, "output_dim": 1,
-             "num_layers": 5, "desired_max": 0.05, "init_noise": 0.01}
-_BASE_CFG = {"batch_size": 16, "l1_lambda": 5e-2, "competitive_lambda": 1e-1}
+_BASE_GNN = {"embedding_dim": 64, "hidden_dim": 64, "output_dim": 1, "num_layers": 5, "desired_max": 0.05, "init_noise": 0.01}
+_BASE_CFG = {"batch_size": 16, "l1_lambda": 7.5, "competitive_lambda": 15.0}
 
 # Each variant may contain:
 #   config              — TrainConfig field overrides (batch_size, window_size, l1_lambda, ...)
@@ -47,6 +42,7 @@ _BASE_CFG = {"batch_size": 16, "l1_lambda": 5e-2, "competitive_lambda": 1e-1}
 #   downsample_override — {dataset: factor} map; dataset is skipped if not present in map
 
 VARIANTS = {
+
     # batch size
     "batch_4":        {"config": {**_BASE_CFG, "batch_size": 4},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
@@ -67,41 +63,39 @@ VARIANTS = {
     "layers_7":       {"config": dict(**_BASE_CFG),
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": {**_BASE_GNN, "num_layers": 7}},
 
-    # bin size — absolute (yuto: 1 sample = 0.5 ms; pdcm/arbitrary: 1 sample = 1 ms)
+    # bin size via downsample factor
     "bin_1ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 2, "pdcm": 1, "arbitrary": 1, "small_circuit_A": 2, "small_circuit_B": 2},
+                       "downsample_override": {"yuto": 2, "pdcm": 1, "pdcm_large": 1, "arbitrary": 1, "small_circuit_A": 2, "small_circuit_B": 2},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
     "bin_2ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 4, "pdcm": 2, "arbitrary": 2, "small_circuit_A": 4, "small_circuit_B": 4},
+                       "downsample_override": {"yuto": 4, "pdcm": 2, "pdcm_large": 2, "arbitrary": 2, "small_circuit_A": 4, "small_circuit_B": 4},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "bin_5ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 10, "pdcm": 5, "arbitrary": 5, "small_circuit_A": 10, "small_circuit_B": 10},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "bin_10ms":       {"config": dict(**_BASE_CFG),
-                       "downsample_override": {"yuto": 20, "pdcm": 10, "arbitrary": 10, "small_circuit_A": 20, "small_circuit_B": 20},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-
-    # additional bin sizes
     "bin_3ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 6, "pdcm": 3, "arbitrary": 3, "small_circuit_A": 6, "small_circuit_B": 6},
+                       "downsample_override": {"yuto": 6, "pdcm": 3, "pdcm_large": 3, "arbitrary": 3, "small_circuit_A": 6, "small_circuit_B": 6},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
     "bin_4ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 8, "pdcm": 4, "arbitrary": 4, "small_circuit_A": 8, "small_circuit_B": 8},
+                       "downsample_override": {"yuto": 8, "pdcm": 4, "pdcm_large": 4, "arbitrary": 4, "small_circuit_A": 8, "small_circuit_B": 8},
+                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
+    "bin_5ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
+                       "downsample_override": {"yuto": 10, "pdcm": 5, "pdcm_large": 5, "arbitrary": 5, "small_circuit_A": 10, "small_circuit_B": 10},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
     "bin_6ms":        {"config": {**_BASE_CFG, "num_epochs": 20},
-                       "downsample_override": {"yuto": 12, "pdcm": 6, "arbitrary": 6, "small_circuit_A": 12, "small_circuit_B": 12},
+                       "downsample_override": {"yuto": 12, "pdcm": 6, "pdcm_large": 6, "arbitrary": 6, "small_circuit_A": 12, "small_circuit_B": 12},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
     "bin_7ms":        {"config": {**_BASE_CFG, "num_epochs": 20},
-                       "downsample_override": {"yuto": 14, "pdcm": 7, "arbitrary": 7, "small_circuit_A": 14, "small_circuit_B": 14},
+                       "downsample_override": {"yuto": 14, "pdcm": 7, "pdcm_large": 7, "arbitrary": 7, "small_circuit_A": 14, "small_circuit_B": 14},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
     "bin_8ms":        {"config": {**_BASE_CFG, "num_epochs": 20},
-                       "downsample_override": {"yuto": 16, "pdcm": 8, "arbitrary": 8, "small_circuit_A": 16, "small_circuit_B": 16},
+                       "downsample_override": {"yuto": 16, "pdcm": 8, "pdcm_large": 8, "arbitrary": 8, "small_circuit_A": 16, "small_circuit_B": 16},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
     "bin_9ms":       {"config": {**_BASE_CFG, "num_epochs": 20},
-                       "downsample_override": {"yuto": 18, "pdcm": 9, "arbitrary": 9, "small_circuit_A": 18, "small_circuit_B": 18},
+                       "downsample_override": {"yuto": 18, "pdcm": 9, "pdcm_large": 9, "arbitrary": 9, "small_circuit_A": 18, "small_circuit_B": 18},
+                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
+    "bin_10ms":       {"config": dict(**_BASE_CFG),
+                       "downsample_override": {"yuto": 20, "pdcm": 10, "pdcm_large": 10, "arbitrary": 10, "small_circuit_A": 20, "small_circuit_B": 20},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
     "bin_20ms":        {"config": {**_BASE_CFG, "num_epochs": 20},
-                       "downsample_override": {"yuto": 40, "pdcm": 20, "arbitrary": 20, "small_circuit_A": 40, "small_circuit_B": 40},
+                       "downsample_override": {"yuto": 40, "pdcm": 20, "pdcm_large": 20, "arbitrary": 20, "small_circuit_A": 40, "small_circuit_B": 40},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
 
     # window size
@@ -140,30 +134,30 @@ VARIANTS = {
                        "gnn_kwargs": dict(**_BASE_GNN)},
 
     # L1 regularisation on adjacency (sparsity)
-    "l1_0":           {"config": {**_BASE_CFG, "l1_lambda": 0.0},
+    "l1_2p5":         {"config": {**_BASE_CFG, "l1_lambda": 2.5},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "l1_1e-3":        {"config": {**_BASE_CFG, "l1_lambda": 1e-3},
+    "l1_5":           {"config": {**_BASE_CFG, "l1_lambda": 5.0},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "l1_1e-2":        {"config": {**_BASE_CFG, "l1_lambda": 1e-2},
+    "l1_7p5":         {"config": dict(**_BASE_CFG),
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "l1_5e-2":        {"config": dict(**_BASE_CFG),
+    "l1_10":          {"config": {**_BASE_CFG, "l1_lambda": 10.0},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "l1_1e-1":        {"config": {**_BASE_CFG, "l1_lambda": 1e-1},
+    "l1_15":          {"config": {**_BASE_CFG, "l1_lambda": 15.0},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
 
     # competitive lambda (exc/inh separation)
-    "comp_0":         {"config": {**_BASE_CFG, "competitive_lambda": 0.0},
+    "comp_5":         {"config": {**_BASE_CFG, "competitive_lambda": 5.0},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "comp_1e-2":      {"config": {**_BASE_CFG, "competitive_lambda": 1e-2},
+    "comp_10":        {"config": {**_BASE_CFG, "competitive_lambda": 10.0},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "comp_1e-1":      {"config": dict(**_BASE_CFG),
+    "comp_15":        {"config": dict(**_BASE_CFG),
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "comp_1":         {"config": {**_BASE_CFG, "competitive_lambda": 1.0},
+    "comp_20":        {"config": {**_BASE_CFG, "competitive_lambda": 20.0},
+                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
+    "comp_30":        {"config": {**_BASE_CFG, "competitive_lambda": 30.0},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
 
-    # self_scale in GNNLayer (balance between self vs. neighbour messages) ──
-    "self_0":         {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": {**_BASE_GNN, "self_scale": 0.0}},
+    # self_scale in GNNLayer
     "self_0p1":       {"config": dict(**_BASE_CFG),
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": {**_BASE_GNN, "self_scale": 0.1}},
     "self_0p25":      {"config": dict(**_BASE_CFG),
@@ -173,8 +167,7 @@ VARIANTS = {
     "self_1":         {"config": dict(**_BASE_CFG),
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": {**_BASE_GNN, "self_scale": 1.0}},
 
-    # embedding dim (encoder → GNN bottleneck) 
-    # Must be set consistently in both encoder_kwargs and gnn_kwargs
+    # embedding dim (encoder → GNN dimension) 
     "emb_16":         {"config": dict(**_BASE_CFG),
                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 16},
                        "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 16}},
@@ -205,8 +198,7 @@ VARIANTS = {
     "lr_5e-4":        {"config": {**_BASE_CFG, "lr": 5e-4},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
     
-    # encoder conv channels and kernel size
-    # kernel size 2
+    # COMBINATION: encoder conv channels and kernel size
     "kernel_2_channels_8": {"config": dict(**_BASE_CFG),
                             "encoder_kwargs": {**_BASE_ENC, "kernel_size": 2, "conv_out_channels": 8}, "gnn_kwargs": dict(**_BASE_GNN)},
     "kernel_2_channels_16": {"config": dict(**_BASE_CFG),
@@ -216,8 +208,6 @@ VARIANTS = {
     "kernel_2_channels_64": {"config": dict(**_BASE_CFG),
                             "encoder_kwargs": {**_BASE_ENC, "kernel_size": 2, "conv_out_channels": 64}, "gnn_kwargs": dict(**_BASE_GNN)}, 
 
-
-    # kernel size 3
     "kernel_3_channels_8": {"config": dict(**_BASE_CFG),
                             "encoder_kwargs": {**_BASE_ENC, "kernel_size": 3, "conv_out_channels": 8}, "gnn_kwargs": dict(**_BASE_GNN)},
     "kernel_3_channels_16": {"config": dict(**_BASE_CFG),
@@ -226,7 +216,6 @@ VARIANTS = {
                             "encoder_kwargs": {**_BASE_ENC, "kernel_size": 3, "conv_out_channels": 32}, "gnn_kwargs": dict(**_BASE_GNN)}, 
     "kernel_3_channels_64": {"config": dict(**_BASE_CFG),
                              "encoder_kwargs": {**_BASE_ENC, "kernel_size": 3, "conv_out_channels": 64}, "gnn_kwargs": dict(**_BASE_GNN)},
-
 
     # kernel size 4
     "kernel_4_channels_8": {"config": dict(**_BASE_CFG),
@@ -237,9 +226,8 @@ VARIANTS = {
                             "encoder_kwargs": {**_BASE_ENC, "kernel_size": 4, "conv_out_channels": 32},  "gnn_kwargs": dict(**_BASE_GNN)}, 
     "kernel_4_channels_64": {"config": dict(**_BASE_CFG),
                             "encoder_kwargs": {**_BASE_ENC, "kernel_size": 4, "conv_out_channels": 64}, "gnn_kwargs": dict(**_BASE_GNN)},
-
-    # embedding dim and hidden dim
-    # embedding dim 16
+    
+    # COMBINATION: embedding dim and hidden dim
     "emb_16_hidden_16": {"config": dict(**_BASE_CFG),
                         "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 16}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 16, "hidden_dim": 16}},
     "emb_16_hidden_32": {"config": dict(**_BASE_CFG), 
@@ -249,7 +237,6 @@ VARIANTS = {
     "emb_16_hidden_128": {"config": dict(**_BASE_CFG), 
                         "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 16}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 16, "hidden_dim": 128}},
 
-    # embedding dim 32
     "emb_32_hidden_16": {"config": dict(**_BASE_CFG), 
                         "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 32}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 32, "hidden_dim": 16}}, 
     "emb_32_hidden_32": {"config": dict(**_BASE_CFG), 
@@ -259,7 +246,6 @@ VARIANTS = {
     "emb_32_hidden_128": {"config": dict(**_BASE_CFG), 
                         "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 32}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 32, "hidden_dim": 128}},
 
-    # embedding dim 64
     "emb_64_hidden_16": {"config": dict(**_BASE_CFG), 
                         "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 64}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 64, "hidden_dim": 16}}, 
     "emb_64_hidden_32": {"config": dict(**_BASE_CFG), 
@@ -269,7 +255,6 @@ VARIANTS = {
     "emb_64_hidden_128": {"config": dict(**_BASE_CFG), 
                         "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 64}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 64, "hidden_dim": 128}}, 
 
-    # embedding dim 128
     "emb_128_hidden_16": {"config": dict(**_BASE_CFG), 
                         "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 128}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 128, "hidden_dim": 16}}, 
     "emb_128_hidden_32": {"config": dict(**_BASE_CFG), 
@@ -298,6 +283,12 @@ DATASET_REGISTRY = {
         "loader": load_pdcm_network,
         "loader_kwargs": {"downsample_factor": 2},
         "num_epochs": 50,
+        "default_window": 100,
+    },
+    "pdcm_large": {
+        "loader": load_pdcm_large_network,
+        "loader_kwargs": {"downsample_factor": 6},
+        "num_epochs": 80,
         "default_window": 100,
     },
     "small_circuit_A": {
@@ -374,7 +365,7 @@ def run_dataset_variant(
     criterion = make_criterion(spike_tensor, device)
 
     window_size = variant_spec["config"].get("window_size", dataset_cfg["default_window"])
-    pop_labels = np.load('datasets/pdcm/pop_labels.npy') if dataset_name == 'pdcm' else None
+    pop_labels = np.load(f'datasets/{dataset_name}/pop_labels.npy') if dataset_name in ('pdcm', 'pdcm_large') else None
 
     # Initialise ablation CSV if needed
     csv_path = output_dir / "ablation.csv"
@@ -392,8 +383,8 @@ def run_dataset_variant(
             batch_size=vcfg.get("batch_size", 16),
             num_epochs=vcfg.get("num_epochs", dataset_cfg["num_epochs"]),
             lr=vcfg.get("lr", 1e-4),
-            l1_lambda=vcfg.get("l1_lambda", 5e-2),
-            competitive_lambda=vcfg.get("competitive_lambda", 1e-1),
+            l1_lambda=vcfg.get("l1_lambda", 7.5),
+            competitive_lambda=vcfg.get("competitive_lambda", 15.0),
             indirect_lambda=vcfg.get("indirect_lambda", 0.0),
             model_type=vcfg.get("model_type", "standard"),
             device=str(device),
@@ -421,7 +412,7 @@ def run_dataset_variant(
         # Save learned adjacency and plot
         learned_A = extract_adjacency(gnn)
         np.save(output_dir / f"gnn_{run_idx}.npy", learned_A)
-        if dataset_name == 'pdcm':
+        if dataset_name in ('pdcm', 'pdcm_large'):
             plot_pdcm_matrix(learned_A, pop_labels, method_name=f"GNN {run_idx}", save_dir=str(output_dir))
         else:
             plot_connectivity_matrix(learned_A, neuron_names=neuron_names,

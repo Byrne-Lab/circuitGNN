@@ -679,3 +679,103 @@ def load_v1_network(downsample_factor=2, gap=0, step=0):
     plt.savefig(f'{data_dir}/ground_truth.pdf', format='pdf')
 
     return binned_spikes, true_conn, neuron_names
+
+
+def load_pdcm_large_network(downsample_factor=2, gap=0, step=0):
+    """
+    Load the large PDCM NetPyNE simulation dataset.
+
+    Parameters
+    ----------
+    downsample_factor : int
+        Bin size in ms (e.g. 10 -> 10 ms bins)
+    gap : ignored
+        Kept for API compatibility with other loaders.
+
+    Returns
+    -------
+    binned_spikes : ndarray (n_neurons, n_timebins)
+        Spike counts per bin.
+    true_conn : ndarray (n_neurons, n_neurons)
+        Signed synaptic weight matrix [pre, post].
+        Positive = excitatory, negative = inhibitory, 0 = no connection.
+    neuron_names : list of str
+        Population label for each neuron (e.g. 'L2e', 'L4i', ...).
+    """
+
+    data_dir = 'datasets/pdcm_large'
+
+    spkt       = np.load(f'{data_dir}/spkt.npy')
+    spkid      = np.load(f'{data_dir}/spkid.npy')
+    true_conn  = np.load(f'{data_dir}/weight_matrix.npy')
+    pop_labels = np.load(f'{data_dir}/pop_labels.npy')
+    sim_dur_ms = np.load(f'{data_dir}/sim_duration_ms.npy')[0]
+    n_neurons    = true_conn.shape[0]
+    neuron_names = list(pop_labels)
+
+    print(spkt.shape, spkid.shape)
+
+    n_bins = int(sim_dur_ms // downsample_factor)
+    binned_spikes = np.zeros((n_neurons, n_bins), dtype=np.int32)
+    t_idx = np.floor(spkt / downsample_factor).astype(int)
+    valid = (t_idx >= 0) & (t_idx < n_bins)
+    np.add.at(binned_spikes, (spkid.astype(int)[valid], t_idx[valid]), 1)
+
+    print(f"Loaded PDCM large network: {n_neurons} neurons, "
+          f"{sim_dur_ms:.0f} ms simulation")
+    print(f"Binned spikes shape: {binned_spikes.shape}  "
+          f"(bin size = {downsample_factor} ms)")
+    print(f"Binned spikes possibilities: {np.unique(binned_spikes)}")
+
+    spike_times_s = [np.where(binned_spikes[i] > 0)[0] * downsample_factor / 1000 for i in range(n_neurons)]
+    plt.figure(figsize=(10, 5))
+    plt.eventplot(spike_times_s, orientation='horizontal', linelengths=0.8, color='black')
+    plt.xlabel('Time (s)')
+    plt.ylabel('Neuron Index')
+    plt.title('Spike Raster')
+    plt.tight_layout()
+    plt.savefig(f'{data_dir}/raster_plot.pdf', format='pdf')
+    plt.close()
+
+    # Plot ground truth connectivity
+    cmap = sns.diverging_palette(240, 10, as_cmap=True)
+    vmin = min(true_conn.min(), -1e-6)
+    vmax = max(true_conn.max(),  1e-6)
+    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(true_conn,
+                xticklabels=False, yticklabels=False,
+                cmap=cmap, norm=norm,
+                cbar_kws={'label': 'Synaptic weight (pA)'},
+                square=True)
+
+    # Draw population boundary lines
+    pops_ordered = ['L2e','L2i','L4e','L4i','L5e','L5i','L6e','L6i']
+    boundaries, tick_centers, tick_labels = [], [], []
+    cursor = 0
+    for pop in pops_ordered:
+        count = np.sum(pop_labels == pop)
+        if count == 0:
+            continue
+        boundaries.append(cursor)
+        tick_centers.append(cursor + count / 2)
+        tick_labels.append(pop)
+        cursor += count
+    boundaries.append(cursor)
+
+    ax = plt.gca()
+    for b in boundaries:
+        ax.axhline(b, color='k', linewidth=0.5)
+        ax.axvline(b, color='k', linewidth=0.5)
+    ax.set_xticks(tick_centers); ax.set_xticklabels(tick_labels, fontsize=8)
+    ax.set_yticks(tick_centers); ax.set_yticklabels(tick_labels, fontsize=8, rotation=0)
+
+    plt.title('True Connectivity (PDCM NetPyNE)')
+    plt.xlabel('Postsynaptic')
+    plt.ylabel('Presynaptic')
+    plt.tight_layout()
+    plt.savefig('datasets/pdcm_large/ground_truth.pdf', format='pdf')
+    plt.close()
+
+    return binned_spikes, true_conn, neuron_names

@@ -16,8 +16,8 @@ class TrainConfig:
     batch_size: int = 16
     num_epochs: int = 20
     lr: float = 1e-4
-    l1_lambda: float = 5e-2    
-    competitive_lambda: float = 1e-1   
+    l1_lambda: float = 7.5
+    competitive_lambda: float = 15.0
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     seed: int = 0
     num_workers: int = 0
@@ -29,7 +29,7 @@ def make_dataloaders(
     window_size: int,
     batch_size: int,
     seed: int = 0,
-    num_workers: int = 0,
+    num_workers: int = 1,
 ) -> Tuple[DataLoader, Optional[DataLoader]]:
     if not isinstance(spike_data, torch.Tensor):
         spike_data = torch.tensor(spike_data, dtype=torch.float32)
@@ -41,13 +41,6 @@ def make_dataloaders(
     train_end = int(0.8 * total_len)
     train_set = torch.utils.data.Subset(dataset, range(0, train_end))
     val_set = torch.utils.data.Subset(dataset, range(train_end, total_len))
-    val_loader = DataLoader(
-        val_set,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=True,
-    )
 
     train_loader = DataLoader(
         train_set,
@@ -56,6 +49,15 @@ def make_dataloaders(
         num_workers=num_workers,
         pin_memory=True,
     )
+
+    val_loader = DataLoader(
+        val_set,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True,
+    )
+
 
     return train_loader, val_loader
 
@@ -80,17 +82,20 @@ def compute_loss(
     predictions: torch.Tensor,
     targets: torch.Tensor,
     criterion: nn.Module,
-    l1_lambda: float = 5e-2,
-    competitive_lambda: float = 1e-1,
+    l1_lambda: float = 7.5,
+    competitive_lambda: float = 15.0,
     model: Optional[nn.Module] = None,
 ) -> torch.Tensor:
     loss = criterion(predictions, targets)
     if model is not None:
 
-        l1_adj = l1_lambda * (torch.log(1 + torch.abs(model.learned_adj_exc)).sum() + torch.log(1 + torch.abs(model.learned_adj_inh)).sum())
-        competitive_penalty = competitive_lambda * (torch.relu(model.learned_adj_exc) * torch.relu(model.learned_adj_inh)).sum()
-        loss = loss + l1_adj+ competitive_penalty
+        penalty_norm = float(model.learned_adj_exc.shape[0]) # divide by N for a per-neuron budget
+
+        l1_adj = l1_lambda / penalty_norm * (torch.log(1 + torch.abs(model.learned_adj_exc)).sum() + torch.log(1 + torch.abs(model.learned_adj_inh)).sum())
+        competitive_penalty = competitive_lambda / penalty_norm * (torch.relu(model.learned_adj_exc) * torch.relu(model.learned_adj_inh)).sum()
         
+        loss = loss + l1_adj + competitive_penalty
+
     return loss
 
 
@@ -101,8 +106,8 @@ def train_epoch(
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
     device: str,
-    competitive_lambda: float = 1e-1,
-    l1_lambda: float = 5e-2,
+    competitive_lambda: float = 15.0,
+    l1_lambda: float = 7.5,
 ) -> float:
     encoder.train()
     gnn.train()

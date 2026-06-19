@@ -92,11 +92,11 @@ class GraphNeuralNetwork(nn.Module):
         if A_init is not None and not signed_init:
             print("Using unsigned adjacency initialization.")
             A_max = A_init.abs().max()
-            A_norm = (A_init / A_max) * desired_max
-            A_noisy_init = A_norm + torch.randn_like(A_norm) * init_noise
-
-            self.learned_adj_exc = nn.Parameter(A_noisy_init.clone())
-            self.learned_adj_inh = nn.Parameter(A_noisy_init.clone())
+            A_norm = (A_init.abs() / A_max) * desired_max
+            init_exc = (A_norm + torch.randn_like(A_norm) * init_noise).clamp_min(1e-4)
+            init_inh = (A_norm + torch.randn_like(A_norm) * init_noise).clamp_min(1e-4)
+            self.learned_adj_exc = nn.Parameter(init_exc)
+            self.learned_adj_inh = nn.Parameter(init_inh)
 
         elif A_init is not None and signed_init:
             print('Using signed adjacency initialization.')
@@ -118,8 +118,8 @@ class GraphNeuralNetwork(nn.Module):
             init_exc[pos_mask] = A_noisy_pos
             init_inh[neg_mask] = A_noisy_neg
 
-            self.learned_adj_exc = nn.Parameter(init_exc.clone())
-            self.learned_adj_inh = nn.Parameter(init_inh.clone())
+            self.learned_adj_exc = nn.Parameter(init_exc.clamp_min(1e-4))
+            self.learned_adj_inh = nn.Parameter(init_inh.clamp_min(1e-4))
 
         else:
             print("Using random numbers for adjacency initialization.")

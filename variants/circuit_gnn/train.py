@@ -81,26 +81,27 @@ def compute_loss(
     predictions: torch.Tensor,
     targets: torch.Tensor,
     criterion: nn.Module,
-    l1_lambda: float = 5e-2,
-    competitive_lambda: float = 1e-1,
+    l1_lambda: float = 7.5,
+    competitive_lambda: float = 15.0,
     indirect_lambda: float = 0.0,
     model: Optional[nn.Module] = None,
 ) -> torch.Tensor:
     loss = criterion(predictions, targets)
     if model is not None:
         if hasattr(model, 'learned_adj_exc') and hasattr(model, 'learned_adj_inh'):
-            l1_adj = l1_lambda * (
-                torch.log(1 + torch.abs(model.learned_adj_exc)).sum()
-                + torch.log(1 + torch.abs(model.learned_adj_inh)).sum()
-            )
-            competitive_penalty = competitive_lambda * (model.learned_adj_exc * model.learned_adj_inh).sum()
-            loss = loss + l1_adj + competitive_penalty
 
-        # Indirect-connection penalty: penalise edges explained by two-hop paths
-        if indirect_lambda > 0.0 and hasattr(model, 'get_adjacency'):
+            penalty_norm = float(model.learned_adj_exc.shape[0]) # divide by N for a per-neuron budget
+
+            l1_adj = l1_lambda / penalty_norm * (torch.log(1 + torch.abs(model.learned_adj_exc)).sum() + torch.log(1 + torch.abs(model.learned_adj_inh)).sum())
+            competitive_penalty = competitive_lambda / penalty_norm * (torch.relu(model.learned_adj_exc) * torch.relu(model.learned_adj_inh)).sum()
+
+            loss = loss + l1_adj + competitive_penalty
+            
+        
+        if indirect_lambda > 0.0 and hasattr(model, 'get_adjacency'): # indirect-connection penalty: penalise edges explained by two-hop paths
             A = model.get_adjacency()
             A_two_hop = (A @ A).detach()  # detach to avoid higher-order gradients
-            loss = loss + indirect_lambda * (A * A_two_hop.abs()).abs().sum()
+            loss = loss + indirect_lambda / float(A.shape[0]) * (A * A_two_hop.abs()).abs().sum()
 
     return loss
 
@@ -112,8 +113,8 @@ def train_epoch(
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
     device: str,
-    competitive_lambda: float = 1e-1,
-    l1_lambda: float = 5e-2,
+    competitive_lambda: float = 15.0,
+    l1_lambda: float = 7.5,
     indirect_lambda: float = 0.0,
 ) -> float:
     encoder.train()
