@@ -54,9 +54,14 @@ ALL_VARIANTS = [
     # encoder kernel size
     "kernel_size_2", "kernel_size_3", "kernel_size_4",
     # L1 regularisation
-    "l1_2p5", "l1_5", "l1_7p5", "l1_10", "l1_15",
+    "l1_0p5", "l1_1", "l1_1p5", "l1_2", "l1_2p5", "l1_5", "l1_7p5", "l1_10", "l1_15",
     # competitive lambda
     "comp_5", "comp_10", "comp_15", "comp_20", "comp_30",
+    # L1 × competitive lambda sweep
+    "l1_1_comp_5", "l1_1_comp_10", "l1_1_comp_15",
+    "l1_1p5_comp_5", "l1_1p5_comp_10", "l1_1p5_comp_15",
+    "l1_2_comp_5", "l1_2_comp_10", "l1_2_comp_15",
+    "l1_2p5_comp_5", "l1_2p5_comp_10", "l1_2p5_comp_15",
     # self_scale
     "self_0p1", "self_0p25", "self_0p5", "self_1",
     # embedding dim
@@ -144,10 +149,12 @@ def main():
             rows.append({
                 "variant": variant, "n_passed": 0, "n_total": n_total,
                 "cosine": "-", "pearson": "-", "spearman": "-",
-                "f1_unsign": "-", "f1_signed": "-",
+                "prec_unsign": "-", "rec_unsign": "-", "f1_unsign": "-",
+                "prec_signed": "-", "rec_signed": "-", "f1_signed": "-",
                 "mcc_unsign": "-", "mcc_signed": "-", "auroc": "-", "nie": "-",
                 "cosine_cons": "-", "pearson_cons": "-", "spearman_cons": "-",
-                "f1_unsign_cons": "-", "f1_signed_cons": "-",
+                "prec_unsign_cons": "-", "rec_unsign_cons": "-", "f1_unsign_cons": "-",
+                "prec_signed_cons": "-", "rec_signed_cons": "-", "f1_signed_cons": "-",
                 "mcc_unsign_cons": "-", "mcc_signed_cons": "-", "auroc_cons": "-", "nie_cons": "-",
             })
             continue
@@ -167,7 +174,11 @@ def main():
             "cosine":          f"{res.cosine:.3f}",
             "pearson":         f"{res.pearson:.3f}",
             "spearman":        f"{res.spearman:.3f}",
+            "prec_unsign":     f"{res.overall_precision:.3f}",
+            "rec_unsign":      f"{res.overall_recall:.3f}",
             "f1_unsign":       f"{res.overall_f1:.3f}",
+            "prec_signed":     f"{res.signed_precision:.3f}",
+            "rec_signed":      f"{res.signed_recall:.3f}",
             "f1_signed":       f"{res.signed_f1:.3f}",
             "mcc_unsign":      f"{res.mcc_unsigned:.3f}",
             "mcc_signed":      f"{res.mcc_signed:.3f}",
@@ -176,7 +187,11 @@ def main():
             "cosine_cons":     f"{res_c.cosine:.3f}",
             "pearson_cons":    f"{res_c.pearson:.3f}",
             "spearman_cons":   f"{res_c.spearman:.3f}",
+            "prec_unsign_cons": f"{res_c.overall_precision:.3f}",
+            "rec_unsign_cons":  f"{res_c.overall_recall:.3f}",
             "f1_unsign_cons":  f"{res_c.overall_f1:.3f}",
+            "prec_signed_cons": f"{res_c.signed_precision:.3f}",
+            "rec_signed_cons":  f"{res_c.signed_recall:.3f}",
             "f1_signed_cons":  f"{res_c.signed_f1:.3f}",
             "mcc_unsign_cons": f"{res_c.mcc_unsigned:.3f}",
             "mcc_signed_cons": f"{res_c.mcc_signed:.3f}",

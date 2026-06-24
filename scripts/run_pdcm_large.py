@@ -12,7 +12,7 @@ from circuit_gnn.utils import plot_pdcm_matrix
 
 
 def main():
-    cfg = RunConfig(num_runs=50, num_epochs=80)
+    cfg = RunConfig(num_runs=50, num_epochs=50)
 
     pop_labels = np.load("datasets/pdcm_large/pop_labels.npy")
 

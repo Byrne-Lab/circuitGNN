@@ -42,14 +42,34 @@ def binned_to_spikes(binned_spikes, bin_size_sec):
     return times[order], ids[order]
 
 
-def result_to_matrix(result):
+def result_to_matrices(result):
+    # Each method returns BOTH graphs the paper describes (Donner et al. 2024):
+    #   - weight graph W: result.all_weights, the graded connection strength.
+    #   - score graph  S: result.stats[:, 2], the decision statistic. Its meaning
+    #     is method-specific (|z| for CI/dSTTC/GLMCC/TE, -log p for sCCG, z for
+    #     GLMPP); higher always means an edge is more probable.
+    # all_weights is aligned row-for-row with stats (spycon's own set_threshold
+    # masks all_weights with a stats-derived mask), and both span the full
+    # directed graph (every ordered pair).
     n = len(result.nodes)
     node_idx = {int(node): i for i, node in enumerate(result.nodes)}
-    mat = np.zeros((n, n), dtype=np.float64)
-    for pre, post, stat in result.stats:
+    weight_mat = np.zeros((n, n), dtype=np.float64)
+    score_mat = np.zeros((n, n), dtype=np.float64)
+    weights = np.asarray(result.all_weights).reshape(-1)
+    for k, (pre, post, stat) in enumerate(result.stats):
         i, j = node_idx[int(pre)], node_idx[int(post)]
-        mat[i, j] = stat
-    return mat
+        weight_mat[i, j] = weights[k]
+        score_mat[i, j] = stat
+    return weight_mat, score_mat
+
+
+def threshold_weights(weight_mat, score_mat, threshold):
+    # Keep a weight only where its connectivity score exceeds the method's
+    # significance threshold; everything else is treated as an unconnected pair.
+    # The threshold is method-specific (result.threshold), derived from a
+    # significance level alpha exactly as in the paper; pass `alpha` in a
+    # method's params to sweep it (paper uses 0.05 / 0.01 / 0.005 / 0.001).
+    return np.where(score_mat > threshold, weight_mat, 0.0)
 
 
 def _ms(v):
@@ -132,6 +152,14 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
         elapsed = time.time() - start
         print(f"  {name} time: {elapsed / 60:.2f} min")
 
-        mat = result_to_matrix(result)
-        np.save(f"{save_dir}/spycon_{name}.npy", mat)
-        plot_connectivity_matrix(mat, neuron_names, f"Spycon {name.upper()}", save_dir=save_dir, plot_val=False)
+        weight_mat, score_mat = result_to_matrices(result)
+        threshold = float(result.threshold)
+        weight_thr = threshold_weights(weight_mat, score_mat, threshold)
+        print(f"    threshold ({result.method}) = {threshold:.4g}")
+
+        np.save(f"{save_dir}/spycon_{name}_W.npy", weight_mat)
+        np.save(f"{save_dir}/spycon_{name}_S.npy", score_mat)
+        np.save(f"{save_dir}/spycon_{name}_Wthr.npy", weight_thr)
+        plot_connectivity_matrix(weight_mat, neuron_names, f"Spycon {name.upper()} W", save_dir=save_dir, plot_val=False)
+        plot_connectivity_matrix(score_mat, neuron_names, f"Spycon {name.upper()} S", save_dir=save_dir, plot_val=False)
+        plot_connectivity_matrix(weight_thr, neuron_names, f"Spycon {name.upper()} Wthr", save_dir=save_dir, plot_val=False)

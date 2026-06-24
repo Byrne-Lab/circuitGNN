@@ -1,3 +1,13 @@
+"""Training loop, model dispatch, and regularizers for the circuitGNN variants.
+
+build_models() maps a `model_type` string to one architecture variant — the
+catalogue lives in models.py (see the "ARCHITECTURE VARIANTS — INDEX" banner).
+compute_loss() adds the adjacency regularizers (L1 + competitive), normalized by
+N for a per-neuron budget, matching src/ and variants/. The penalty is gated on
+the model exposing learned_adj_exc/inh, so the attention variant (which has no
+learned A) trains on the data term alone.
+"""
+
 import os
 from dataclasses import dataclass
 from typing import Optional, Tuple, Dict, Any
@@ -7,12 +17,10 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from .dataset import SpikeTrainDataset, MultiStepSpikeTrainDataset
-from .models import (GraphNeuralNetwork, SpikeEncoder,
-                     DalesLawGNN, IndirectFilterGNN,
-                     SkipGNN, EdgeCondGNN, SplitPathGNN, MultiStepGNN,
-                     HadamardModGNN, LearnedScaleGNN, DiffGNN,
-                     SoftmaxGNN, PerNeuronSelfScaleGNN, GatedGNN, AdaptiveGNN,
-                     ReLUMessageGNN, ARResidualGNN)
+from .models import (GraphNeuralNetwork, SpikeEncoder, MemorySpikeEncoder,
+                     HadamardModGNN, MultiStepGNN,
+                     AggregationGNN, AttentionGNN, GatedGNN, ConvUpdateGNN,
+                     InterpretableGNN)
 
 
 @dataclass
@@ -21,12 +29,11 @@ class TrainConfig:
     batch_size: int = 16
     num_epochs: int = 20
     lr: float = 1e-4
-    l1_lambda: float = 0.0
-    competitive_lambda: float = 0.0
-    reciprocity_lambda: float = 0.0
-    indirect_lambda: float = 0.0
-    k_steps: int = 1            # >1 activates MultiStepSpikeTrainDataset
-    model_type: str = "standard"  # "standard"|"dales"|"indirect_filter"|"skip"|"edge_cond"|"split_path"|"multi_step"|"hadamard_mod"|"learned_scale"|"diff"|"softmax"|"per_neuron_self"|"gated"|"adaptive"|"relu_message"
+    l1_lambda: float = 7.5
+    competitive_lambda: float = 15.0
+    k_steps: int = 1               # >1 activates MultiStepSpikeTrainDataset (multi_step)
+    model_type: str = "standard"   # GNN variant selector; see the INDEX banner in models.py
+    encoder_type: str = "standard" # encoder axis: "standard" | "memory_slot"
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     seed: int = 0
     num_workers: int = 0
@@ -72,46 +79,33 @@ def build_models(
     gnn_kwargs: Optional[Dict[str, Any]] = None,
     device: str = "cpu",
     model_type: str = "standard",
+    encoder_type: str = "standard",
     k_steps: int = 1,
-) -> Tuple[SpikeEncoder, nn.Module]:
+) -> Tuple[nn.Module, nn.Module]:
     encoder_kwargs = encoder_kwargs or {}
     gnn_kwargs = gnn_kwargs or {}
 
-    encoder = SpikeEncoder(window_size=window_size, **encoder_kwargs).to(device)
+    if encoder_type == "memory_slot":
+        encoder = MemorySpikeEncoder(window_size=window_size, num_neurons=num_neurons,
+                                     **encoder_kwargs).to(device)
+    else:
+        encoder = SpikeEncoder(window_size=window_size, **encoder_kwargs).to(device)
 
-    no_init_keys = ("A_init", "signed_init")
-
-    if model_type == "dales":
-        kw = {k: v for k, v in gnn_kwargs.items() if k not in no_init_keys}
-        gnn = DalesLawGNN(num_neurons=num_neurons, **kw).to(device)
-    elif model_type == "indirect_filter":
-        gnn = IndirectFilterGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
-    elif model_type == "skip":
-        gnn = SkipGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
-    elif model_type == "edge_cond":
-        gnn = EdgeCondGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
-    elif model_type == "split_path":
-        gnn = SplitPathGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
+    if model_type == "hadamard_mod":
+        gnn = HadamardModGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
     elif model_type == "multi_step":
         gnn = MultiStepGNN(num_neurons=num_neurons, k_steps=k_steps, **gnn_kwargs).to(device)
-    elif model_type == "hadamard_mod":
-        gnn = HadamardModGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
-    elif model_type == "learned_scale":
-        gnn = LearnedScaleGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
-    elif model_type == "diff":
-        gnn = DiffGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
-    elif model_type == "softmax":
-        gnn = SoftmaxGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
-    elif model_type == "per_neuron_self":
-        gnn = PerNeuronSelfScaleGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
-    elif model_type == "gated":
+    elif model_type in ("agg_sum", "agg_mean", "agg_max", "agg_vpa"):
+        agg = model_type.split("_", 1)[1]  # "sum" | "mean" | "max" | "vpa"
+        gnn = AggregationGNN(num_neurons=num_neurons, agg=agg, **gnn_kwargs).to(device)
+    elif model_type == "agg_attention":
+        gnn = AttentionGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
+    elif model_type == "update_gru":
         gnn = GatedGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
-    elif model_type == "adaptive":
-        gnn = AdaptiveGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
-    elif model_type == "relu_message":
-        gnn = ReLUMessageGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
-    elif model_type == "ar_residual":
-        gnn = ARResidualGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
+    elif model_type == "update_conv":
+        gnn = ConvUpdateGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
+    elif model_type == "interpretable":
+        gnn = InterpretableGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
     else:
         gnn = GraphNeuralNetwork(num_neurons=num_neurons, **gnn_kwargs).to(device)
 
@@ -122,48 +116,20 @@ def compute_loss(
     predictions: torch.Tensor,
     targets: torch.Tensor,
     criterion: nn.Module,
-    l1_lambda: float = 5e-2,
-    competitive_lambda: float = 1e-1,
-    reciprocity_lambda: float = 0.0,
-    indirect_lambda: float = 0.0,
+    l1_lambda: float = 7.5,
+    competitive_lambda: float = 15.0,
     model: Optional[nn.Module] = None,
 ) -> torch.Tensor:
-    # criterion handles any shape: (batch,N) for single-step, (batch,N,k) for multi-step
+    # criterion handles any shape: (batch,N) single-step, (batch,N,k) multi-step
     loss = criterion(predictions, targets)
-    if model is not None:
-        if hasattr(model, 'learned_adj_exc') and hasattr(model, 'learned_adj_inh'):
-            l1_adj = l1_lambda * (
-                torch.log(1 + torch.abs(model.learned_adj_exc)).sum()
-                + torch.log(1 + torch.abs(model.learned_adj_inh)).sum()
-            )
-            # penalize only coexisting rectified weights; raw params can go negative
-            # (dead under the relu in get_adjacency), and a negative product would
-            # *reward* growing the opposite matrix instead of penalizing overlap
-            competitive_penalty = competitive_lambda * (
-                torch.relu(model.learned_adj_exc) * torch.relu(model.learned_adj_inh)
-            ).sum()
-            loss = loss + l1_adj + competitive_penalty
+    if model is not None and hasattr(model, 'learned_adj_exc') and hasattr(model, 'learned_adj_inh'):
 
-            # reciprocity penalty: discourage a mirror edge pair where (i,j) is
-            # excitatory and (j,i) is inhibitory (the antisymmetric "lead-lag"
-            # artifact). Transpose of the competitive penalty's exc/inh coupling.
-            if reciprocity_lambda > 0.0:
-                reciprocity_penalty = reciprocity_lambda * (
-                    torch.relu(model.learned_adj_exc) * torch.relu(model.learned_adj_inh).t()
-                ).sum()
-                loss = loss + reciprocity_penalty
+        penalty_norm = float(model.learned_adj_exc.shape[0])
 
-        if indirect_lambda > 0.0 and hasattr(model, 'get_adjacency'):
-            A = model.get_adjacency()
-            A_two_hop = (A @ A).detach()
-            loss = loss + indirect_lambda * (A * A_two_hop.abs()).abs().sum()
+        l1_adj = l1_lambda / penalty_norm * (torch.log(1 + torch.abs(model.learned_adj_exc)).sum() + torch.log(1 + torch.abs(model.learned_adj_inh)).sum())
+        competitive_penalty = competitive_lambda / penalty_norm * (torch.relu(model.learned_adj_exc) * torch.relu(model.learned_adj_inh)).sum()
 
-        # ar_residual: train the per-neuron self head to predict the target from
-        # the neuron's own history alone, so the graph path only fits the residual.
-        self_pred = getattr(model, 'last_self_pred', None)
-        self_aux_lambda = getattr(model, 'self_aux_lambda', 0.0)
-        if self_pred is not None and self_aux_lambda > 0.0:
-            loss = loss + self_aux_lambda * criterion(self_pred, targets)
+        loss = loss + l1_adj + competitive_penalty
 
     return loss
 
@@ -175,10 +141,8 @@ def train_epoch(
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
     device: str,
-    competitive_lambda: float = 1e-1,
-    l1_lambda: float = 5e-2,
-    reciprocity_lambda: float = 0.0,
-    indirect_lambda: float = 0.0,
+    competitive_lambda: float = 15.0,
+    l1_lambda: float = 7.5,
 ) -> float:
     encoder.train()
     gnn.train()
@@ -191,11 +155,7 @@ def train_epoch(
         optimizer.zero_grad()
         embeddings = encoder(inputs)
         outputs = gnn(embeddings)
-        loss = compute_loss(
-            outputs, targets, criterion,
-            l1_lambda, competitive_lambda, reciprocity_lambda, indirect_lambda,
-            model=gnn,
-        )
+        loss = compute_loss(outputs, targets, criterion, l1_lambda, competitive_lambda, model=gnn)
         loss.backward()
         optimizer.step()
 
@@ -260,6 +220,7 @@ def train_model(
         gnn_kwargs=gnn_kwargs,
         device=device,
         model_type=config.model_type,
+        encoder_type=config.encoder_type,
         k_steps=config.k_steps,
     )
 
@@ -275,8 +236,6 @@ def train_model(
             encoder, gnn, train_loader, optimizer, criterion, device,
             config.competitive_lambda,
             config.l1_lambda,
-            config.reciprocity_lambda,
-            config.indirect_lambda,
         )
         history["train_loss"].append(train_loss)
 

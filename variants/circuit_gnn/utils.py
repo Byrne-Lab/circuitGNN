@@ -375,7 +375,7 @@ def plot_metric_verification(true_conn, learned_conn, save_dir, method_name="con
     prec = tp / (tp + fp) if (tp + fp) else 0.0
     rec = tp / (tp + fn) if (tp + fn) else 0.0
     f1 = 2 * prec * rec / (prec + rec) if (prec + rec) else 0.0
-    du = np.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+    du = np.sqrt(float(tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
     mcc_u = (tp * tn - fp * fn) / du if du > 0 else 0.0
 
     # signed confusion (sign flip counts as FP only)
@@ -388,7 +388,7 @@ def plot_metric_verification(true_conn, learned_conn, save_dir, method_name="con
     precs = tps / (tps + fps) if (tps + fps) else 0.0
     recs = tps / (tps + fns) if (tps + fns) else 0.0
     f1s = 2 * precs * recs / (precs + recs) if (precs + recs) else 0.0
-    ds = np.sqrt((tps + fps) * (tps + fns) * (tns + fps) * (tns + fns))
+    ds = np.sqrt(float(tps + fps) * (tps + fns) * (tns + fps) * (tns + fns))
     mcc_s = (tps * tns - fps * fns) / ds if ds > 0 else 0.0
 
     # AUROC (rank edges by |learned|)

@@ -1,12 +1,12 @@
 """Compare trained architecture results for circuitGNN.
 
 Run from repo root after running run_architectures.py:
-    python architectures/compare_architectures.py --datasets yuto
-    python architectures/compare_architectures.py --datasets pdcm --architectures baseline dales
-    python architectures/compare_architectures.py --datasets yuto --ablation_threshold 0.10
+    python architectures/compare_architectures.py --dataset yuto
+    python architectures/compare_architectures.py --dataset pdcm --architectures baseline dales
+    python architectures/compare_architectures.py --dataset yuto --ablation_threshold 0.10
 
 Prints a table and saves a CSV (architecture_comparison_<dataset>_thr<threshold>.csv) with all
-metrics (cosine, pearson, spearman, unsigned/signed F1, unsigned/signed MCC, AUROC, NIE) for both
+metrics (cosine, pearson, spearman, unsigned/signed precision/recall/F1, unsigned/signed MCC, AUROC, NIE) for both
 the mean and the consistent-mean matrix of each architecture.
 """
 
@@ -26,27 +26,26 @@ REPO_ROOT = ARCH_DIR.parent
 sys.path.insert(0, str(ARCH_DIR))
 os.chdir(str(REPO_ROOT))
 
-from circuit_gnn.data import (load_yuto_network, load_pdcm_network, load_arbitrary_network,
-                               load_small_circuit_A_network, load_small_circuit_B_network)
-from circuit_gnn.utils import (calculate_fit, align_matrices,
-                                get_consistent_connections, get_top_k, sign_inference,
-                                plot_connectivity_matrix, plot_pdcm_matrix,
-                                plot_metric_verification)
+from circuit_gnn.data import (load_yuto_network, load_pdcm_network, load_pdcm_large_network, load_arbitrary_network, load_small_circuit_A_network, load_small_circuit_B_network)
+from circuit_gnn.utils import (calculate_fit, align_matrices, get_consistent_connections, get_top_k, sign_inference, plot_connectivity_matrix, plot_pdcm_matrix, plot_metric_verification)
 
 RESULTS_BASE = ARCH_DIR / "results"
 
 DATASET_REGISTRY = {
-    "yuto":            {"loader": load_yuto_network,            "loader_kwargs": {"downsample_factor": 20, "gap": 0.20, "step": 1}},
-    "pdcm":            {"loader": load_pdcm_network,            "loader_kwargs": {"downsample_factor": 2}},
-    "arbitrary":       {"loader": load_arbitrary_network,       "loader_kwargs": {"downsample_factor": 10}},
-    "small_circuit_A": {"loader": load_small_circuit_A_network, "loader_kwargs": {"downsample_factor": 20}},
-    "small_circuit_B": {"loader": load_small_circuit_B_network, "loader_kwargs": {"downsample_factor": 20}},
+    "yuto":            {"loader": load_yuto_network,            "loader_kwargs": {"downsample_factor": "auto", "gap": 0.20, "step": 1}},
+    "pdcm":            {"loader": load_pdcm_network,            "loader_kwargs": {"downsample_factor": "auto"}},
+    "pdcm_large":      {"loader": load_pdcm_large_network,      "loader_kwargs": {"downsample_factor": "auto"}},
+    "arbitrary":       {"loader": load_arbitrary_network,       "loader_kwargs": {"downsample_factor": "auto"}},
+    "small_circuit_A": {"loader": load_small_circuit_A_network, "loader_kwargs": {"downsample_factor": "auto"}},
+    "small_circuit_B": {"loader": load_small_circuit_B_network, "loader_kwargs": {"downsample_factor": "auto"}},
 }
 
 ALL_ARCHITECTURES = [
-    "baseline", "dales", "indirect_filter",
-    "skip_residual", "edge_cond", "split_path", "multi_step", "learned_scale", "hadamard_mod", "diff",
-    "softmax", "per_neuron_self", "gated", "adaptive", "relu_message",
+    "baseline", "hadamard_mod", "multi_step",
+    "agg_sum", "agg_mean", "agg_max", "agg_vpa", "agg_attention",
+    "update_gru", "update_conv",
+    "memory_slot",
+    "interpretable",
 ]
 
 
@@ -85,7 +84,7 @@ def load_architecture_results(
 
 def main():
     parser = argparse.ArgumentParser(description="Compare circuitGNN architecture results")
-    parser.add_argument("--datasets", required=True, choices=list(DATASET_REGISTRY.keys()))
+    parser.add_argument("--dataset", required=True, choices=list(DATASET_REGISTRY.keys()))
     parser.add_argument("--architectures", nargs="+", default=ALL_ARCHITECTURES,
                         help="Architectures to compare (default: all)")
     parser.add_argument("--ablation_threshold", type=float, default=0.20,
@@ -98,8 +97,8 @@ def main():
     _, true_conn, neuron_names = reg["loader"](**reg["loader_kwargs"])
 
     # Plot function: pdcm uses population-boundary format, others use standard
-    if args.dataset == "pdcm":
-        pop_labels = np.load("datasets/pdcm/pop_labels.npy")
+    if args.dataset in ("pdcm", "pdcm_large"):
+        pop_labels = np.load(f"datasets/{args.dataset}/pop_labels.npy")
         def do_plot(matrix, method_name, save_dir):
             plot_pdcm_matrix(matrix, pop_labels, method_name=method_name, save_dir=save_dir)
     else:
@@ -116,10 +115,12 @@ def main():
             rows.append({
                 "architecture": arch, "n_passed": 0, "n_total": n_total,
                 "cosine": "-", "pearson": "-", "spearman": "-",
-                "f1_unsign": "-", "f1_signed": "-",
+                "prec_unsign": "-", "rec_unsign": "-", "f1_unsign": "-",
+                "prec_signed": "-", "rec_signed": "-", "f1_signed": "-",
                 "mcc_unsign": "-", "mcc_signed": "-", "auroc": "-", "nie": "-",
                 "cosine_cons": "-", "pearson_cons": "-", "spearman_cons": "-",
-                "f1_unsign_cons": "-", "f1_signed_cons": "-",
+                "prec_unsign_cons": "-", "rec_unsign_cons": "-", "f1_unsign_cons": "-",
+                "prec_signed_cons": "-", "rec_signed_cons": "-", "f1_signed_cons": "-",
                 "mcc_unsign_cons": "-", "mcc_signed_cons": "-", "auroc_cons": "-", "nie_cons": "-",
             })
             continue
@@ -139,7 +140,11 @@ def main():
             "cosine":          f"{res.cosine:.3f}",
             "pearson":         f"{res.pearson:.3f}",
             "spearman":        f"{res.spearman:.3f}",
+            "prec_unsign":     f"{res.overall_precision:.3f}",
+            "rec_unsign":      f"{res.overall_recall:.3f}",
             "f1_unsign":       f"{res.overall_f1:.3f}",
+            "prec_signed":     f"{res.signed_precision:.3f}",
+            "rec_signed":      f"{res.signed_recall:.3f}",
             "f1_signed":       f"{res.signed_f1:.3f}",
             "mcc_unsign":      f"{res.mcc_unsigned:.3f}",
             "mcc_signed":      f"{res.mcc_signed:.3f}",
@@ -148,7 +153,11 @@ def main():
             "cosine_cons":     f"{res_c.cosine:.3f}",
             "pearson_cons":    f"{res_c.pearson:.3f}",
             "spearman_cons":   f"{res_c.spearman:.3f}",
+            "prec_unsign_cons": f"{res_c.overall_precision:.3f}",
+            "rec_unsign_cons":  f"{res_c.overall_recall:.3f}",
             "f1_unsign_cons":  f"{res_c.overall_f1:.3f}",
+            "prec_signed_cons": f"{res_c.signed_precision:.3f}",
+            "rec_signed_cons":  f"{res_c.signed_recall:.3f}",
             "f1_signed_cons":  f"{res_c.signed_f1:.3f}",
             "mcc_unsign_cons": f"{res_c.mcc_unsigned:.3f}",
             "mcc_signed_cons": f"{res_c.mcc_signed:.3f}",

@@ -1,7 +1,7 @@
 """
-python benchmarks/init_metrics.py                      # all datasets with an init/ folder
-python benchmarks/init_metrics.py --dataset yuto       # one dataset
-python benchmarks/init_metrics.py --dataset yuto pdcm  # a subset
+python benchmarks/compare_baselines.py                      # all datasets with an init/ folder
+python benchmarks/compare_baselines.py --dataset yuto       # one dataset
+python benchmarks/compare_baselines.py --dataset yuto pdcm  # a subset
 """
 
 import os
@@ -61,16 +61,20 @@ def score_init_folder(init_dir, true_conn):
             skipped.append((p.name, f"calculate_fit error: {e}"))
             continue
         rows.append({
-            "variant":    p.stem,
-            "cosine":     round(res.cosine, 4),
-            "pearson":    round(res.pearson, 4),
-            "spearman":   round(res.spearman, 4),
-            "f1_unsign":  round(res.overall_f1, 4),
-            "f1_signed":  round(res.signed_f1, 4),
-            "mcc_unsign": round(res.mcc_unsigned, 4),
-            "mcc_signed": round(res.mcc_signed, 4),
-            "auroc":      round(res.auroc, 4),
-            "nie":        round(res.nie, 4),
+            "variant":     p.stem,
+            "cosine":      round(res.cosine, 4),
+            "pearson":     round(res.pearson, 4),
+            "spearman":    round(res.spearman, 4),
+            "prec_unsign": round(res.overall_precision, 4),
+            "rec_unsign":  round(res.overall_recall, 4),
+            "f1_unsign":   round(res.overall_f1, 4),
+            "prec_signed": round(res.signed_precision, 4),
+            "rec_signed":  round(res.signed_recall, 4),
+            "f1_signed":   round(res.signed_f1, 4),
+            "mcc_unsign":  round(res.mcc_unsigned, 4),
+            "mcc_signed":  round(res.mcc_signed, 4),
+            "auroc":       round(res.auroc, 4),
+            "nie":         round(res.nie, 4),
         })
     return rows, skipped, n_nan_zeroed
 
@@ -104,7 +108,7 @@ def main():
             continue
 
         df = pd.DataFrame(rows).set_index("variant").sort_index()
-        csv_path = init_dir / f"init_metrics_{dataset}.csv"
+        csv_path = init_dir / f"compare_baselines_{dataset}.csv"
         df.to_csv(csv_path)
 
         print(f"\n=== {dataset}: scored {len(rows)} variants (ground truth {true_conn.shape}) ===")

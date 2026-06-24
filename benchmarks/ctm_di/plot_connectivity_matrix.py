@@ -3,12 +3,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 import h5py
+import json
 import numpy as np
 import os
-from circuit_gnn.utils import plot_connectivity_matrix, plot_pdcm_matrix
+import seaborn as sns
+from circuit_gnn.utils import plot_connectivity_matrix, plot_pdcm_matrix, plot_v1_matrix
+
+RED_BLUE = sns.diverging_palette(240, 10, as_cmap=True)
 
 os.chdir('C:/Users/agupta17/Documents/GitHub/circuitGNN/datasets')
-data_name = 'pdcm'
+data_name = 'small_circuit_B'
 
 data = f"{data_name}/init/ctm_di_raw_connectivity.mat"
 
@@ -44,10 +48,26 @@ print(f"Non-zero connections: {np.count_nonzero(C_thresh)}")
 save_dir = f"{data_name}/init"
 np.save(f"{save_dir}/CTM_DI.npy", C_thresh)
 
-if data_name == 'pdcm':
+if data_name in ('pdcm', 'pdcm_large'):
     pop_labels = np.load(f'{data_name}/pop_labels.npy')
     plot_pdcm_matrix(C_thresh, pop_labels, method_name='CTM-DI', save_dir=save_dir)
-else:
-    with open(f'C:/Users/agupta17/Documents/GitHub/circuitGNN/datasets/yuto/spikes.head') as f:
+elif data_name == 'v1':
+    gids = np.load(f'{data_name}/neuron_gids.npy')
+    with open(f'{data_name}/neuron_info.json') as f:
+        info = json.load(f)
+    idx_to_pop = {}
+    for gid_str, inf in info.items():
+        idx = int(np.searchsorted(gids, int(gid_str)))
+        if idx < len(gids) and gids[idx] == int(gid_str):
+            idx_to_pop[idx] = inf['pop']
+    neuron_names = [idx_to_pop.get(i, 'unknown') for i in range(C_thresh.shape[0])]
+    plot_v1_matrix(C_thresh, neuron_names, method_name='CTM-DI', save_dir=save_dir)
+elif data_name in ('yuto', 'small_circuit_A', 'small_circuit_B'):
+    with open(f'{data_name}/spikes.head') as f:
         neuron_names = [line.split('[')[1].split('.')[0] for line in f if line.startswith('V[')]
-    plot_connectivity_matrix(C_thresh, neuron_names, method_name='CTM-DI', save_dir=save_dir, plot_val=False)
+    plot_connectivity_matrix(C_thresh, neuron_names, method_name='CTM-DI',
+                             cmap=RED_BLUE, save_dir=save_dir, plot_val=False)
+else:
+    neuron_names = [f'Neuron {i+1}' for i in range(C_thresh.shape[0])]
+    plot_connectivity_matrix(C_thresh, neuron_names, method_name='CTM-DI',
+                             cmap=RED_BLUE, save_dir=save_dir, plot_val=False)

@@ -12,4 +12,8 @@ benchmarks/CoNNECT/modules/sources/crosscorrelogram.c
 toy_phantom
 *.csv
 variants/variant_distribution.py
-scripts/plot_thresholds.py
+plot_thresholds.py
+plot_variant.py
+encoder_interpretability.py
+plot_variant_distribution.py
+analyze_interpretable.py    

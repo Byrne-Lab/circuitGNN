@@ -1,7 +1,5 @@
-from .models import (SpikeEncoder, GNNLayer,
-                     GraphNeuralNetwork, DalesLawGNN, IndirectFilterGNN,
-                     SkipGNN, EdgeCondGNN, SplitPathGNN, MultiStepGNN, DiffGNN,
-                     HadamardModGNN, LearnedScaleGNN,
-                     SoftmaxGNN, PerNeuronSelfScaleGNN, GatedGNN, AdaptiveGNN,
-                     ReLUMessageGNN)
+from .models import (SpikeEncoder, MemorySpikeEncoder, GNNLayer, GraphNeuralNetwork,
+                     HadamardModGNN, MultiStepGNN,
+                     AggregationGNN, AttentionGNN, GatedGNN, ConvUpdateGNN,
+                     InterpretableGNN, signed_input_jacobian)
 from .dataset import SpikeTrainDataset, MultiStepSpikeTrainDataset
