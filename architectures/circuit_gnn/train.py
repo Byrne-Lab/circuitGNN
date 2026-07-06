@@ -18,9 +18,11 @@ from torch.utils.data import DataLoader
 
 from .dataset import SpikeTrainDataset, MultiStepSpikeTrainDataset
 from .models import (GraphNeuralNetwork, SpikeEncoder, MemorySpikeEncoder,
-                     HadamardModGNN, MultiStepGNN,
+                     FiLMMemorySpikeEncoder, HybridMemorySpikeEncoder,
+                     RecurrentMemorySpikeEncoder, RateNormSpikeEncoder,
+                     HadamardModGNN, MultiStepGNN, MsgNormGNN,
                      AggregationGNN, AttentionGNN, GatedGNN, ConvUpdateGNN,
-                     InterpretableGNN)
+                     InterpretableGNN, RateAwareGNN)
 
 
 @dataclass
@@ -33,7 +35,9 @@ class TrainConfig:
     competitive_lambda: float = 15.0
     k_steps: int = 1               # >1 activates MultiStepSpikeTrainDataset (multi_step)
     model_type: str = "standard"   # GNN variant selector; see the INDEX banner in models.py
-    encoder_type: str = "standard" # encoder axis: "standard" | "memory_slot"
+    encoder_type: str = "standard" # encoder axis: "standard" | "memory_slot" | "memory_film"
+                                   #   | "memory_film_bounded" | "memory_hybrid" | "memory_recurrent"
+                                   #   | "rate_norm"
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     seed: int = 0
     num_workers: int = 0
@@ -81,6 +85,7 @@ def build_models(
     model_type: str = "standard",
     encoder_type: str = "standard",
     k_steps: int = 1,
+    firing_rates: Optional[torch.Tensor] = None,
 ) -> Tuple[nn.Module, nn.Module]:
     encoder_kwargs = encoder_kwargs or {}
     gnn_kwargs = gnn_kwargs or {}
@@ -88,11 +93,28 @@ def build_models(
     if encoder_type == "memory_slot":
         encoder = MemorySpikeEncoder(window_size=window_size, num_neurons=num_neurons,
                                      **encoder_kwargs).to(device)
+    elif encoder_type == "memory_film":
+        encoder = FiLMMemorySpikeEncoder(window_size=window_size, num_neurons=num_neurons,
+                                         **encoder_kwargs).to(device)
+    elif encoder_type == "memory_film_bounded":
+        encoder = FiLMMemorySpikeEncoder(window_size=window_size, num_neurons=num_neurons,
+                                         bound_scale=True, **encoder_kwargs).to(device)
+    elif encoder_type == "memory_hybrid":
+        encoder = HybridMemorySpikeEncoder(window_size=window_size, num_neurons=num_neurons,
+                                           **encoder_kwargs).to(device)
+    elif encoder_type == "memory_recurrent":
+        encoder = RecurrentMemorySpikeEncoder(window_size=window_size, num_neurons=num_neurons,
+                                              **encoder_kwargs).to(device)
+    elif encoder_type == "rate_norm":
+        encoder = RateNormSpikeEncoder(window_size=window_size, num_neurons=num_neurons,
+                                       firing_rates=firing_rates, **encoder_kwargs).to(device)
     else:
         encoder = SpikeEncoder(window_size=window_size, **encoder_kwargs).to(device)
 
     if model_type == "hadamard_mod":
         gnn = HadamardModGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
+    elif model_type == "msg_norm":
+        gnn = MsgNormGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
     elif model_type == "multi_step":
         gnn = MultiStepGNN(num_neurons=num_neurons, k_steps=k_steps, **gnn_kwargs).to(device)
     elif model_type in ("agg_sum", "agg_mean", "agg_max", "agg_vpa"):
@@ -106,6 +128,9 @@ def build_models(
         gnn = ConvUpdateGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
     elif model_type == "interpretable":
         gnn = InterpretableGNN(num_neurons=num_neurons, **gnn_kwargs).to(device)
+    elif model_type == "rate_aware":
+        gnn = RateAwareGNN(num_neurons=num_neurons, firing_rates=firing_rates,
+                           **gnn_kwargs).to(device)
     else:
         gnn = GraphNeuralNetwork(num_neurons=num_neurons, **gnn_kwargs).to(device)
 
@@ -126,7 +151,12 @@ def compute_loss(
 
         penalty_norm = float(model.learned_adj_exc.shape[0])
 
-        l1_adj = l1_lambda / penalty_norm * (torch.log(1 + torch.abs(model.learned_adj_exc)).sum() + torch.log(1 + torch.abs(model.learned_adj_inh)).sum())
+        # rate_aware: per-presynaptic-column L1 weights (mean 1, so the average
+        # shrinkage matches the baseline). Models without the buffer -> uniform.
+        col_w = getattr(model, 'penalty_col_weight', None)
+        w = col_w.view(1, -1) if col_w is not None else 1.0  # (1, N) over sources j
+
+        l1_adj = l1_lambda / penalty_norm * ((w * torch.log(1 + torch.abs(model.learned_adj_exc))).sum() + (w * torch.log(1 + torch.abs(model.learned_adj_inh))).sum())
         competitive_penalty = competitive_lambda / penalty_norm * (torch.relu(model.learned_adj_exc) * torch.relu(model.learned_adj_inh)).sum()
 
         loss = loss + l1_adj + competitive_penalty
@@ -213,6 +243,13 @@ def train_model(
         config.k_steps,
     )
 
+    # per-neuron mean spikes-per-bin, used by the rate_aware penalty (ignored by
+    # every other model_type). Computed on the full record: a global activity
+    # property, and unsupervised, so there is no train/val leakage concern.
+    if not isinstance(spike_data, torch.Tensor):
+        spike_data = torch.tensor(spike_data, dtype=torch.float32)
+    firing_rates = spike_data.float().mean(dim=1)
+
     encoder, gnn = build_models(
         num_neurons=num_neurons,
         window_size=config.window_size,
@@ -222,6 +259,7 @@ def train_model(
         model_type=config.model_type,
         encoder_type=config.encoder_type,
         k_steps=config.k_steps,
+        firing_rates=firing_rates,
     )
 
     if criterion is None:

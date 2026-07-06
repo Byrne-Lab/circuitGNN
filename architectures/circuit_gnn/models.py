@@ -10,7 +10,18 @@ import torch.nn.functional as F
 # `num_layers` message-passing steps to predict each neuron's next bin. Every
 # variant changes ONE axis of this scaffold and is selected by the `model_type`
 # string in train.build_models. The ENCODER is a separate axis selected by
-# `encoder_type` (default "standard"; "memory_slot" adds a per-neuron memory).
+# `encoder_type`:
+#      standard             plain conv/window encoder.
+#      memory_slot          + per-neuron memory concatenated (additive prior).
+#      memory_film          per-neuron memory FiLM-modulates conv maps (unbounded).
+#      memory_film_bounded  memory_film with tanh-bounded scale (stable).
+#      memory_hybrid        bounded FiLM modulation + concatenated memory (both).
+#      memory_recurrent     GRU over the window time axis, seeded by per-neuron
+#                           memory: a dynamic state, not a static prior.
+#      rate_norm            standardize each neuron's window by its own baseline
+#                           rate so a rare source's spike is as salient as a
+#                           frequent one (fixes low-rate presynaptic gradient
+#                           starvation).
 #
 #   #  model_type        one-line idea
 #   1  standard          Baseline: signed scalar adjacency + 2-layer message MLP.
@@ -28,11 +39,41 @@ import torch.nn.functional as F
 #   6  interpretable     Baseline (identical training) + analysis probes that
 #                        read effective connectivity out of message passing:
 #                        Jacobian connectivity & mono-vs-polysynaptic split.
+#   7  rate_aware        REGULARIZATION axis. Baseline scaffold, but the L1
+#                        sparsity penalty is weighted per PRESYNAPTIC neuron by
+#                        inverse firing rate, so edges out of low-rate sources
+#                        are shrunk less. Targets the systematic miss of
+#                        low-firing presynaptic populations (e.g. V1 in v1_v2).
+#   8  msg_norm          MESSAGE-PASSING tweak. L2-normalize each source's
+#                        message to unit norm before aggregation, so a source's
+#                        influence is the edge weight A[i,j] alone, not its
+#                        activity-scaled message norm. Parameter-free; restores
+#                        gradient to low-rate sources' outgoing edges.
 #
 # Aggregation refs: GNN-VPA (Schneckenreiter et al. 2024) for sum/mean/max/vpa;
 # GAT (Velickovic et al. 2018) for attention. Update ref: GGS-NN (Li et al. 2016)
 # for the GRU cell.
+#
+# FILE LAYOUT (grouped by axis):
+#   1. ENCODERS              — SpikeEncoder + the memory-encoder variants.
+#   2. CORE SCAFFOLD         — GNNLayer + GraphNeuralNetwork (model_type=standard).
+#   3. MESSAGE-PASSING TWEAKS— hadamard_mod, multi_step, msg_norm.
+#   4. AGGREGATION VARIANTS  — agg_sum/mean/max/vpa + agg_attention.
+#   5. UPDATE VARIANTS       — update_gru + update_conv.
+#   6. INTERPRETABILITY      — InterpretableGNN + signed_input_jacobian probe.
+#   7. REGULARIZATION        — RateAwareGNN (rate-weighted sparsity penalty).
 
+
+# ###########################################################################
+# #                                                                         #
+# #                         1. ENCODERS  (encoder_type)                     #
+# #                                                                         #
+# # SpikeEncoder is the plain conv/window encoder (encoder_type="standard"). #
+# # The variants below change ONE axis of how a persistent per-neuron memory #
+# # enters the window encoding: concatenated (slot), FiLM-modulated (film /  #
+# # film_bounded), both (hybrid), or recurrent state over time (recurrent).  #
+# #                                                                          #
+# ###########################################################################
 
 class SpikeEncoder(nn.Module):
     def __init__(self, window_size, conv_out_channels=32, embedding_dim=64, kernel_size=3):
@@ -114,12 +155,300 @@ class MemorySpikeEncoder(nn.Module):
 
 
 # ===========================================================================
-# VARIANT 1 — Baseline                                  (model_type="standard")
-# Idea: encode each neuron's spike window, learn a signed N x N adjacency, and
-# message-pass `num_layers` times to predict the next bin. Every other variant
-# is a single-axis tweak of this scaffold (a custom layer paired with its model
-# class, overriding only _build_layers unless noted).
+# ENCODER VARIANT — FiLM per-neuron memory           (encoder_type="memory_film")
+# Idea: instead of concatenating the per-neuron memory (which can only add a
+# per-neuron *shift* to the embedding), let the memory MODULATE the conv feature
+# maps via FiLM (Perez et al. 2018): each neuron's memory row emits a per-channel
+# scale gamma_i and shift beta_i applied to its conv features before the
+# activation,  feats <- (1 + gamma_i) * feats + beta_i. This adds the missing
+# multiplicative path so the memory can *recalibrate* a neuron's encoding (e.g.
+# normalize out its baseline rate), not just bias it. FiLM is generated by a
+# linear layer initialized to zero so the encoder starts at identity (== the
+# plain conv encoder) and learns modulation from there. Needs num_neurons.
 # ===========================================================================
+
+class FiLMMemorySpikeEncoder(nn.Module):
+    """SpikeEncoder whose per-neuron memory FiLM-modulates the conv feature maps.
+
+    Same conv/window path as SpikeEncoder, but a (num_neurons, mem_dim) memory
+    table drives a per-channel affine modulation (gamma, beta) of the conv
+    feature maps after batchnorm and before the ReLU. The FiLM generator is
+    zero-initialized, so at init gamma=beta=0 and the layer reduces to the plain
+    encoder; modulation is learned per neuron.
+    """
+
+    def __init__(self, window_size, num_neurons, conv_out_channels=32,
+                 embedding_dim=64, kernel_size=3, mem_dim=16, bound_scale=False):
+        super(FiLMMemorySpikeEncoder, self).__init__()
+
+        self.kernel_size = kernel_size
+        self.conv_out_channels = conv_out_channels
+        # bound_scale=True squashes gamma through tanh so the multiplicative path
+        # (1 + gamma) stays in (0, 2): no sign flips or blow-ups (encoder_type
+        # "memory_film_bounded"). Default False == the original memory_film.
+        self.bound_scale = bound_scale
+        self.conv1d = nn.Conv1d(in_channels=1,
+                                out_channels=conv_out_channels,
+                                kernel_size=kernel_size,
+                                padding=0)
+        self.relu = nn.ReLU()
+        self.batchnorm = nn.BatchNorm1d(conv_out_channels)
+        # one persistent memory row per neuron, driving the FiLM modulation
+        self.neuron_memory = nn.Parameter(0.01 * torch.randn(num_neurons, mem_dim))
+        # FiLM generator: memory -> per-channel (gamma, beta). Zero-init => the
+        # encoder starts at identity (gamma=beta=0) and learns modulation.
+        self.film = nn.Linear(mem_dim, 2 * conv_out_channels)
+        nn.init.zeros_(self.film.weight)
+        nn.init.zeros_(self.film.bias)
+        self.fc = nn.Linear(conv_out_channels * window_size, embedding_dim)
+
+    def forward(self, x):
+        batch_size, num_neurons, window_size = x.shape
+        x = x.view(batch_size * num_neurons, 1, window_size)
+        x = F.pad(x, (self.kernel_size - 1, 0))  # left-only causal pad
+        out = self.conv1d(x)
+        out = self.batchnorm(out)                # (B*N, C, W)
+
+        # per-neuron, per-channel FiLM from the memory table
+        gamma_beta = self.film(self.neuron_memory)               # (N, 2C)
+        gamma, beta = gamma_beta.chunk(2, dim=-1)                 # (N, C), (N, C)
+        if self.bound_scale:
+            gamma = torch.tanh(gamma)        # (1 + gamma) in (0, 2); still 0 at zero-init
+        gamma = gamma.unsqueeze(0).expand(batch_size, -1, -1).reshape(batch_size * num_neurons, -1, 1)
+        beta = beta.unsqueeze(0).expand(batch_size, -1, -1).reshape(batch_size * num_neurons, -1, 1)
+        out = (1.0 + gamma) * out + beta         # FiLM-modulated feature maps
+
+        out = self.relu(out)
+        out = out.view(batch_size, num_neurons, -1)
+        embeddings = self.fc(out)
+        return embeddings
+
+
+# ===========================================================================
+# ENCODER VARIANT — Hybrid memory                    (encoder_type="memory_hybrid")
+# Idea: combine the two winning memory encoders. The per-neuron memory table both
+# (a) FiLM-modulates the conv feature maps with a BOUNDED scale (tanh gamma, so
+# (1+gamma) in (0,2)) — the multiplicative recalibration of memory_film made
+# stable — AND (b) is concatenated raw into the fc input — the additive per-neuron
+# prior of memory_slot. So memory gets both a multiplicative and an additive path.
+# The FiLM generator is zero-init, so at init the encoder == plain conv features
+# (gamma=beta=0) with the raw memory concat. Needs num_neurons.
+# ===========================================================================
+
+class HybridMemorySpikeEncoder(nn.Module):
+    """Per-neuron memory that BOTH FiLM-modulates the conv maps (bounded gamma)
+    and is concatenated into the fc input.
+
+    Superset of MemorySpikeEncoder (additive concat) and FiLMMemorySpikeEncoder
+    (multiplicative modulation): one (num_neurons, mem_dim) table feeds a
+    zero-init FiLM generator whose scale is bounded by tanh, and the same table
+    row is appended to each neuron's flattened, modulated conv features.
+    """
+
+    def __init__(self, window_size, num_neurons, conv_out_channels=32,
+                 embedding_dim=64, kernel_size=3, mem_dim=16):
+        super(HybridMemorySpikeEncoder, self).__init__()
+
+        self.kernel_size = kernel_size
+        self.conv_out_channels = conv_out_channels
+        self.conv1d = nn.Conv1d(in_channels=1,
+                                out_channels=conv_out_channels,
+                                kernel_size=kernel_size,
+                                padding=0)
+        self.relu = nn.ReLU()
+        self.batchnorm = nn.BatchNorm1d(conv_out_channels)
+        # one persistent memory row per neuron, driving FiLM and concatenated raw
+        self.neuron_memory = nn.Parameter(0.01 * torch.randn(num_neurons, mem_dim))
+        # FiLM generator (zero-init => starts at identity modulation)
+        self.film = nn.Linear(mem_dim, 2 * conv_out_channels)
+        nn.init.zeros_(self.film.weight)
+        nn.init.zeros_(self.film.bias)
+        # +mem_dim: the raw memory row is concatenated alongside the conv features
+        self.fc = nn.Linear(conv_out_channels * window_size + mem_dim, embedding_dim)
+
+    def forward(self, x):
+        batch_size, num_neurons, window_size = x.shape
+        x = x.view(batch_size * num_neurons, 1, window_size)
+        x = F.pad(x, (self.kernel_size - 1, 0))  # left-only causal pad
+        out = self.conv1d(x)
+        out = self.batchnorm(out)                # (B*N, C, W)
+
+        # bounded per-neuron, per-channel FiLM from the memory table
+        gamma_beta = self.film(self.neuron_memory)               # (N, 2C)
+        gamma, beta = gamma_beta.chunk(2, dim=-1)                 # (N, C), (N, C)
+        gamma = torch.tanh(gamma)        # (1 + gamma) in (0, 2); still 0 at zero-init
+        gamma = gamma.unsqueeze(0).expand(batch_size, -1, -1).reshape(batch_size * num_neurons, -1, 1)
+        beta = beta.unsqueeze(0).expand(batch_size, -1, -1).reshape(batch_size * num_neurons, -1, 1)
+        out = (1.0 + gamma) * out + beta         # FiLM-modulated feature maps
+
+        out = self.relu(out)
+        out = out.view(batch_size, num_neurons, -1)
+        # append each neuron's persistent memory row, broadcast over the batch
+        mem = self.neuron_memory.unsqueeze(0).expand(batch_size, -1, -1)
+        out = torch.cat([out, mem], dim=-1)
+        embeddings = self.fc(out)
+        return embeddings
+
+
+# ===========================================================================
+# ENCODER VARIANT — Recurrent memory               (encoder_type="memory_recurrent")
+# Idea: make the per-neuron memory GENUINELY recurrent instead of a static prior.
+# A GRU runs over the window's TIME axis (one step per bin), so each neuron's
+# hidden state is updated bin-by-bin by its actual spike sequence — dynamic state,
+# not a fixed learned vector. The persistent per-neuron memory table seeds the
+# GRU's INITIAL hidden state h0[i] (the neuron's identity / baseline carried into
+# the recurrence); the GRU then evolves it across the window and the FINAL hidden
+# state becomes the embedding. A small causal conv first lifts each 1-D bin to a
+# local feature vector that feeds the GRU. Needs num_neurons.
+#
+# Note: this is recurrence over the WITHIN-WINDOW time axis. Windows slide by
+# step=1, so consecutive windows overlap by (window_size - 1) bins and this
+# already carries almost the same history a true cross-window state would —
+# without breaking the shuffled, independent-window training loop shared by the
+# other variants. A true cross-batch stateful version would need a non-shuffled,
+# temporally contiguous loader and detached state carried between batches.
+# ===========================================================================
+
+class RecurrentMemorySpikeEncoder(nn.Module):
+    """Encoder whose per-neuron memory is a recurrent state over the time axis.
+
+    A causal conv lifts each spike bin to a local feature vector; a GRU then runs
+    over the window's bins per neuron, initialized from a persistent per-neuron
+    memory table (projected to the GRU hidden size). The final hidden state is
+    projected to the embedding, so the "memory" is a dynamic state updated by the
+    spike sequence rather than a static learned prior.
+    """
+
+    def __init__(self, window_size, num_neurons, conv_out_channels=32,
+                 embedding_dim=64, kernel_size=3, mem_dim=16,
+                 gru_hidden=64, gru_layers=1):
+        super(RecurrentMemorySpikeEncoder, self).__init__()
+
+        self.kernel_size = kernel_size
+        self.gru_hidden = gru_hidden
+        self.gru_layers = gru_layers
+        self.num_neurons = num_neurons
+
+        # per-time-step local features feeding the GRU (causal pad keeps length=W)
+        self.conv1d = nn.Conv1d(in_channels=1,
+                                out_channels=conv_out_channels,
+                                kernel_size=kernel_size,
+                                padding=0)
+        self.batchnorm = nn.BatchNorm1d(conv_out_channels)
+        self.relu = nn.ReLU()
+        # persistent per-neuron memory -> GRU initial hidden state (the identity)
+        self.neuron_memory = nn.Parameter(0.01 * torch.randn(num_neurons, mem_dim))
+        self.h0_proj = nn.Linear(mem_dim, gru_layers * gru_hidden)
+        self.gru = nn.GRU(input_size=conv_out_channels, hidden_size=gru_hidden,
+                          num_layers=gru_layers, batch_first=True)
+        self.fc = nn.Linear(gru_hidden, embedding_dim)
+
+    def forward(self, x):
+        batch_size, num_neurons, window_size = x.shape
+        x = x.view(batch_size * num_neurons, 1, window_size)
+        x = F.pad(x, (self.kernel_size - 1, 0))  # left-only causal pad
+        out = self.conv1d(x)                      # (B*N, C, W)
+        out = self.batchnorm(out)
+        out = self.relu(out)
+        seq = out.transpose(1, 2).contiguous()    # (B*N, W, C): sequence over time
+
+        # per-neuron memory -> initial hidden state, broadcast over the batch.
+        # Row order of seq is batch-major (b*N + n), so h0 must match: b outer,
+        # n inner.
+        h0 = self.h0_proj(self.neuron_memory)                          # (N, L*H)
+        h0 = h0.view(num_neurons, self.gru_layers, self.gru_hidden)    # (N, L, H)
+        h0 = h0.permute(1, 0, 2).contiguous()                         # (L, N, H)
+        h0 = h0.unsqueeze(1).expand(-1, batch_size, -1, -1)          # (L, B, N, H)
+        h0 = h0.reshape(self.gru_layers, batch_size * num_neurons,
+                        self.gru_hidden).contiguous()                 # (L, B*N, H)
+
+        _, hn = self.gru(seq, h0)                  # hn: (L, B*N, H)
+        last = hn[-1]                              # (B*N, H): final state, top layer
+        embeddings = self.fc(last)                 # (B*N, embedding_dim)
+        embeddings = embeddings.view(batch_size, num_neurons, -1)
+        return embeddings
+
+
+# ===========================================================================
+# ENCODER VARIANT — Rate normalization               (encoder_type="rate_norm")
+# Idea: the baseline conv path (and its cross-neuron BatchNorm) represents a
+# low-firing neuron's spikes with a tiny activation relative to high-firing
+# neurons, so a rare presynaptic spike is washed out and its outgoing edges are
+# gradient-starved — no signal reaches A[i,j] no matter how the penalty is tuned.
+# Fix: standardize each neuron's window by its OWN baseline BEFORE the conv:
+#      x <- (x - mu_i) / sqrt(mu_i + eps),   mu_i = neuron i's mean spikes/bin.
+# A spike from a low-rate neuron then becomes a large value (~1/sqrt(mu_i)) rather
+# than a small one, so its conv features stand out and gradient flows onto its
+# outgoing edges. sqrt(mu_i) is the Poisson scale; eps floors the amplification for
+# near-silent neurons. Because all neurons now share a common input scale, the
+# downstream cross-neuron BatchNorm is no longer dominated by high-rate neurons, so
+# the rest of the path is identical to SpikeEncoder. Needs num_neurons + firing_rates.
+#
+# This is the "inject signal" complement to the rate_aware penalty ("remove the
+# shrinkage headwind"): rate_aware only lets an edge survive if it already has some
+# data gradient, whereas rate_norm creates that gradient. The two are composable.
+# ===========================================================================
+
+class RateNormSpikeEncoder(nn.Module):
+    """SpikeEncoder that standardizes each neuron's window by its own baseline rate.
+
+    Identical conv/window path to SpikeEncoder, but the input is first standardized
+    per neuron, x <- (x - mu_i) / sqrt(mu_i + eps) with mu_i the neuron's mean
+    spikes/bin, so a rare source's spike produces a large activation instead of
+    being washed out. firing_rates=None falls back to identity (== SpikeEncoder).
+    """
+
+    def __init__(self, window_size, num_neurons, firing_rates=None,
+                 conv_out_channels=32, embedding_dim=64, kernel_size=3, eps=1e-3):
+        super(RateNormSpikeEncoder, self).__init__()
+
+        self.kernel_size = kernel_size
+        self.conv1d = nn.Conv1d(in_channels=1,
+                                out_channels=conv_out_channels,
+                                kernel_size=kernel_size,
+                                padding=0)
+        self.relu = nn.ReLU()
+        self.batchnorm = nn.BatchNorm1d(conv_out_channels)
+        self.fc = nn.Linear(conv_out_channels * window_size, embedding_dim)
+
+        # per-neuron standardization constants. Buffers: move with .to(device) and
+        # are saved in the checkpoint. None -> identity (behaves like SpikeEncoder).
+        if firing_rates is None:
+            mu = torch.zeros(num_neurons)
+            denom = torch.ones(num_neurons)
+        else:
+            mu = torch.as_tensor(firing_rates, dtype=torch.float32).flatten()
+            assert mu.numel() == num_neurons, \
+                f"firing_rates has {mu.numel()} entries, expected {num_neurons}"
+            denom = torch.sqrt(mu + eps)          # Poisson scale, eps floors the gain
+        self.register_buffer("rate_mean", mu)
+        self.register_buffer("rate_denom", denom)
+
+    def forward(self, x):
+        batch_size, num_neurons, window_size = x.shape
+        # standardize each neuron by its own baseline rate (broadcast over batch/time)
+        x = (x - self.rate_mean.view(1, -1, 1)) / self.rate_denom.view(1, -1, 1)
+        x = x.reshape(batch_size * num_neurons, 1, window_size)
+        x = F.pad(x, (self.kernel_size - 1, 0))  # left-only causal pad
+        out = self.conv1d(x)
+        out = self.batchnorm(out)
+        out = self.relu(out)
+        out = out.view(batch_size * num_neurons, -1)
+        embeddings = self.fc(out)
+        embeddings = embeddings.view(batch_size, num_neurons, -1)
+        return embeddings
+
+
+# ###########################################################################
+# #                                                                         #
+# #               2. CORE SCAFFOLD  (model_type="standard")                 #
+# #                                                                         #
+# # The baseline message-passing GNN. Encode each neuron's spike window,    #
+# # learn a signed N x N adjacency, and message-pass `num_layers` times to  #
+# # predict the next bin. Every model variant below is a single-axis tweak  #
+# # of this scaffold, overriding only _build_layers unless noted.           #
+# #                                                                         #
+# ###########################################################################
 
 class GNNLayer(nn.Module):
     def __init__(self, in_dim, out_dim, self_scale=0.5):
@@ -231,123 +560,14 @@ class GraphNeuralNetwork(nn.Module):
         return self.fc_out(x).squeeze(-1)
 
 
-# ===========================================================================
-# VARIANT 6 — Interpretability probe               (model_type="interpretable")
-# Idea: behaviourally identical to the baseline (same GNNLayer scaffold, same
-# learned signed A from _init_adjacency, same forward at train time, same
-# regularizers) but adds analysis methods that read interpretability signals
-# OUT of the trained message passing. The point is that get_adjacency() returns
-# the raw weight A[i,j], whereas each message actually passes through W_message
-# (a ReLU MLP) + LayerNorm, so the influence a source truly exerts on a target
-# is not A but the input->output sensitivity of the network. These probes
-# measure that, and split it by synaptic path length.
-#
-#   • jacobian_connectivity(emb, n_hops)     — effective connectivity J[i,j]:
-#       how much source j moves target i's predicted logit, as the Jacobian of
-#       the output w.r.t. the per-neuron input embedding (reduced over features).
-#   • polysynaptic_decomposition(emb)        — the same influence split by path
-#       length, by limiting how many message-passing layers may use A:
-#       n_hops=1 -> monosynaptic (direct), up to L -> full polysynaptic reach.
-#   • module fn signed_input_jacobian(enc,gnn,x) — signed effective connectivity
-#       through the FULL pipeline (encoder+GNN) for an excitatory/inhibitory sign
-#       directly comparable to the signed get_adjacency().
-#
-# forward(emb, n_hops=None) is the ONLY change vs baseline, and n_hops=None
-# reproduces GraphNeuralNetwork.forward exactly, so training is unchanged and
-# extract_adjacency()/get_adjacency() behave like the baseline.
-# ===========================================================================
-
-class InterpretableGNN(GraphNeuralNetwork):
-    """Baseline GNN plus effective-connectivity probes (see banner)."""
-
-    def forward(self, embeddings, n_hops=None):
-        """Baseline forward, optionally restricting neighbour mixing to the first
-        `n_hops` message-passing layers (later layers update self-only, A=0).
-
-        The longest source->target path then spans `n_hops` edges, so n_hops=1 is
-        monosynaptic and n_hops=L is the full polysynaptic reach. n_hops=None uses
-        A in every layer -> identical to GraphNeuralNetwork.forward (train path).
-        """
-        A = self.get_adjacency() * self.A_scale
-        Z = torch.zeros_like(A)
-        x = embeddings
-        for li, layer in enumerate(self.layers):
-            x = layer(x, A if (n_hops is None or li < n_hops) else Z)
-        return self.fc_out(x).squeeze(-1)
-
-    def jacobian_connectivity(self, embeddings, n_hops=None, signed=False):
-        """Effective connectivity J[i,j] = influence of source j on target i.
-
-        Computes the Jacobian of the output logits w.r.t. the per-neuron input
-        embeddings and reduces over the embedding feature dim, averaged over the
-        batch. Orientation is [post, pre] = [target i, source j], matching
-        get_adjacency() (the runner transposes once at save time).
-
-            signed=False : ||d y_i / d emb_j||_2            (magnitude, vs |A|)
-            signed=True  : magnitude * sign(sum_d d y_i/d emb_j)   (heuristic
-                           sign; for a faithful E/I sign use signed_input_jacobian
-                           through the encoder, where "more input spikes" has a
-                           well-defined direction).
-
-        Put the model in eval() first if you want deterministic BatchNorm/Dropout
-        upstream. Returns an (N, N) CPU tensor.
-        """
-        emb = embeddings.detach().clone().requires_grad_(True)
-        out = self.forward(emb, n_hops=n_hops)               # (B, N) logits
-        N = out.shape[1]
-        J = torch.zeros(N, N, device=emb.device)
-        for i in range(N):
-            g, = torch.autograd.grad(out[:, i].sum(), emb, retain_graph=(i < N - 1))
-            mag = g.norm(dim=-1)                              # (B, N_source)
-            if signed:
-                mag = mag * torch.sign(g.sum(dim=-1))
-            J[i] = mag.mean(dim=0)
-        return J.detach().cpu()
-
-    def polysynaptic_decomposition(self, embeddings, max_hops=None, signed=False):
-        """Split effective connectivity by synaptic path length.
-
-        Runs jacobian_connectivity at n_hops = 1..max_hops (default: number of
-        message-passing layers) and returns:
-            'cumulative'[k-1]  : influence using up to k hops
-            'incremental'[k-1] : influence of EXACTLY-k-hop paths (J_k - J_{k-1})
-            'mono'             : incremental[0] (direct / monosynaptic)
-            'poly'             : cumulative[-1] - cumulative[0] (all indirect)
-        Comparing 'mono' against get_adjacency() shows how much of a learned edge
-        is genuinely direct vs a shadow of multi-step propagation (the confound
-        pairwise correlation / transfer entropy collapse into one number).
-        """
-        L = len(self.layers) if max_hops is None else max_hops
-        cum = [self.jacobian_connectivity(embeddings, n_hops=k, signed=signed)
-               for k in range(1, L + 1)]
-        inc = [cum[0]] + [cum[k] - cum[k - 1] for k in range(1, L)]
-        return {"cumulative": cum, "incremental": inc,
-                "mono": cum[0], "poly": cum[-1] - cum[0]}
-
-
-def signed_input_jacobian(encoder, gnn, inputs, n_hops=None):
-    """Signed effective connectivity through the FULL pipeline (encoder + GNN).
-
-    J[i,j] = mean_batch sum_t  d y_i / d x_{j,t}: if source neuron j spikes more
-    across its input window, does target i's predicted logit rise (excitatory, +)
-    or fall (inhibitory, -)? Summing the gradient over the window collapses it to
-    a signed scalar per source, directly comparable to the signed get_adjacency().
-
-    inputs: (B, N, W) raw spike windows. `gnn` should be an InterpretableGNN if
-    n_hops is not None (so mono/poly paths can be isolated); for n_hops=None any
-    baseline GNN works. Orientation is [post, pre] = [target i, source j].
-    """
-    encoder.eval(); gnn.eval()
-    x = inputs.detach().clone().requires_grad_(True)
-    emb = encoder(x)
-    out = gnn(emb, n_hops=n_hops) if n_hops is not None else gnn(emb)
-    N = out.shape[1]
-    J = torch.zeros(N, N, device=x.device)
-    for i in range(N):
-        g, = torch.autograd.grad(out[:, i].sum(), x, retain_graph=(i < N - 1))
-        J[i] = g.sum(dim=-1).mean(dim=0)                     # signed, per source
-    return J.detach().cpu()
-
+# ###########################################################################
+# #                                                                         #
+# #         3. MESSAGE-PASSING TWEAKS  (model_type=hadamard_mod, multi_step) #
+# #                                                                         #
+# # Single-axis variants of the core scaffold that change the message       #
+# # function or the prediction horizon (not the aggregation/update axes).   #
+# #                                                                         #
+# ###########################################################################
 
 # ===========================================================================
 # VARIANT 2 — Hadamard modulator                    (model_type="hadamard_mod")
@@ -439,6 +659,87 @@ class MultiStepGNN(GraphNeuralNetwork):
             x = layer(x, A)
         return self.fc_out(x)  # (batch, N, k_steps) — no squeeze
 
+
+# ===========================================================================
+# VARIANT 8 — Message normalization                     (model_type="msg_norm")
+# Idea: in the baseline layer the per-edge contribution is A[i,j] * m_j, where
+# m_j = W_message(x_j). The message norm ||m_j|| scales with how active neuron j
+# is (an active source produces a larger embedding -> larger message), so the
+# gradient onto A[i,j] is itself proportional to ||m_j||: a low-rate source gets a
+# tiny gradient and its outgoing edge stays faint or dies, no matter how the input
+# or the penalty is scaled. This is the activity confound that rate normalization
+# of the INPUT cannot remove, because W_message re-introduces it at every layer.
+#
+# Fix: L2-normalize each source's message to unit norm before aggregation,
+#      neighbor_agg[i] = sum_j A[i,j] * (m_j / ||m_j||).
+# Now every source contributes at the same scale, so the influence of j on i — and
+# the gradient onto A[i,j] — is carried by the edge weight ALONE, decoupled from
+# j's activity. This is exactly what structure inference wants: detect that j->i
+# exists regardless of how loudly j fires. Parameter-free (the eps is a fixed
+# numerical floor against a zero-norm message, not a dataset knob), so nothing to
+# tune per dataset. Only the neighbour messages are normalized; the self term is
+# untouched, and A_scale=0 still zeros the neighbour path (ablation intact).
+# ===========================================================================
+
+class MsgNormGNNLayer(nn.Module):
+    """Baseline layer that L2-normalizes each source's message before aggregation.
+
+    Identical to GNNLayer except each neuron's message m_j is divided by its own
+    L2 norm, so sum_j A[i,j] m_j becomes sum_j A[i,j] (m_j / ||m_j||): the edge
+    weight A[i,j] carries the influence, decoupled from source activity. eps is a
+    fixed numerical floor (not a tunable hyperparameter).
+    """
+
+    def __init__(self, in_dim, out_dim, self_scale=0.5, eps=1e-8):
+        super().__init__()
+        mlp_dim = 2 * in_dim
+        self.self_scale = self_scale
+        self.eps = eps
+        self.W_message = nn.Sequential(
+            nn.Linear(in_dim, mlp_dim, bias=True),
+            nn.ReLU(),
+            nn.Linear(mlp_dim, out_dim, bias=True),
+        )
+        self.W_self = nn.Sequential(
+            nn.Linear(in_dim, out_dim, bias=True),
+            nn.ReLU(),
+        )
+        self.norm = nn.LayerNorm(out_dim)
+        self.relu = nn.ReLU()
+
+    def forward(self, x, A):
+        messages = self.W_message(x)                              # (B, N, out_dim)
+        # unit-norm each source neuron's message (per batch, per neuron)
+        messages = messages / (messages.norm(dim=-1, keepdim=True) + self.eps)
+        self_term = self.W_self(x)
+        neighbor_agg = torch.matmul(A, messages)                  # sum_j A[i,j] m̂_j
+        out = self.relu(self.norm(neighbor_agg + self.self_scale * self_term))
+        return out
+
+
+class MsgNormGNN(GraphNeuralNetwork):
+    """GraphNeuralNetwork whose every layer unit-norms messages before aggregation."""
+
+    def _build_layers(self, num_layers, embedding_dim, hidden_dim, self_scale):
+        layers = []
+        for i in range(num_layers):
+            in_dim = embedding_dim if i == 0 else hidden_dim
+            layers.append(MsgNormGNNLayer(in_dim, hidden_dim, self_scale=self_scale))
+        return layers
+
+
+# ###########################################################################
+# #                                                                         #
+# #   4. AGGREGATION VARIANTS                                               #
+# #      (model_type="agg_sum"|"agg_mean"|"agg_max"|"agg_vpa"|"agg_attention")#
+# #                                                                         #
+# # All change ONE axis: how neighbour messages are reduced over the        #
+# # sources j. sum/mean/max/vpa keep the learned signed A and only change   #
+# # the reduction (GNN-VPA, Schneckenreiter et al. 2024); attention REPLACES #
+# # A with GAT weights (Velickovic et al. 2018) and reads connectivity out  #
+# # of the running mean attention.                                          #
+# #                                                                         #
+# ###########################################################################
 
 # ===========================================================================
 # VARIANT 4 — Aggregation functions
@@ -614,6 +915,17 @@ class AttentionGNN(GraphNeuralNetwork):
         return A * (1 - torch.eye(A.size(0), device=A.device))
 
 
+# ###########################################################################
+# #                                                                         #
+# #     5. UPDATE VARIANTS  (model_type="update_gru" | "update_conv")       #
+# #                                                                         #
+# # All change ONE axis: how the aggregated neighbour message integrates    #
+# # into the node state. update_gru uses a GRU cell (GGS-NN, Li et al.      #
+# # 2016); update_conv uses a Conv1D over the feature dim. Both keep the    #
+# # baseline weighted-sum aggregation and the learned signed A.             #
+# #                                                                         #
+# ###########################################################################
+
 # ===========================================================================
 # VARIANT 5a — GRU update                                   (model_type="update_gru")
 # Idea: integrate the aggregated neighbor message into the node state with a GRU
@@ -720,3 +1032,207 @@ class ConvUpdateGNN(GraphNeuralNetwork):
             layers.append(ConvUpdateGNNLayer(in_dim, hidden_dim, self_scale=self_scale,
                                              kernel_size=self._conv_kernel_size))
         return layers
+
+
+# ###########################################################################
+# #                                                                         #
+# #         6. INTERPRETABILITY  (model_type="interpretable")               #
+# #                                                                         #
+# # Behaviourally identical to the baseline (same scaffold, same training)  #
+# # but adds analysis probes that read effective connectivity OUT of the    #
+# # trained message passing (Jacobian connectivity & mono-vs-polysynaptic   #
+# # split), plus a module-level signed-Jacobian probe through the full      #
+# # encoder+GNN pipeline.                                                   #
+# #                                                                         #
+# ###########################################################################
+
+# ===========================================================================
+# VARIANT 6 — Interpretability probe               (model_type="interpretable")
+# Idea: behaviourally identical to the baseline (same GNNLayer scaffold, same
+# learned signed A from _init_adjacency, same forward at train time, same
+# regularizers) but adds analysis methods that read interpretability signals
+# OUT of the trained message passing. The point is that get_adjacency() returns
+# the raw weight A[i,j], whereas each message actually passes through W_message
+# (a ReLU MLP) + LayerNorm, so the influence a source truly exerts on a target
+# is not A but the input->output sensitivity of the network. These probes
+# measure that, and split it by synaptic path length.
+#
+#   • jacobian_connectivity(emb, n_hops)     — effective connectivity J[i,j]:
+#       how much source j moves target i's predicted logit, as the Jacobian of
+#       the output w.r.t. the per-neuron input embedding (reduced over features).
+#   • polysynaptic_decomposition(emb)        — the same influence split by path
+#       length, by limiting how many message-passing layers may use A:
+#       n_hops=1 -> monosynaptic (direct), up to L -> full polysynaptic reach.
+#   • module fn signed_input_jacobian(enc,gnn,x) — signed effective connectivity
+#       through the FULL pipeline (encoder+GNN) for an excitatory/inhibitory sign
+#       directly comparable to the signed get_adjacency().
+#
+# forward(emb, n_hops=None) is the ONLY change vs baseline, and n_hops=None
+# reproduces GraphNeuralNetwork.forward exactly, so training is unchanged and
+# extract_adjacency()/get_adjacency() behave like the baseline.
+# ===========================================================================
+
+class InterpretableGNN(GraphNeuralNetwork):
+    """Baseline GNN plus effective-connectivity probes (see banner)."""
+
+    def forward(self, embeddings, n_hops=None):
+        """Baseline forward, optionally restricting neighbour mixing to the first
+        `n_hops` message-passing layers (later layers update self-only, A=0).
+
+        The longest source->target path then spans `n_hops` edges, so n_hops=1 is
+        monosynaptic and n_hops=L is the full polysynaptic reach. n_hops=None uses
+        A in every layer -> identical to GraphNeuralNetwork.forward (train path).
+        """
+        A = self.get_adjacency() * self.A_scale
+        Z = torch.zeros_like(A)
+        x = embeddings
+        for li, layer in enumerate(self.layers):
+            x = layer(x, A if (n_hops is None or li < n_hops) else Z)
+        return self.fc_out(x).squeeze(-1)
+
+    def jacobian_connectivity(self, embeddings, n_hops=None, signed=False):
+        """Effective connectivity J[i,j] = influence of source j on target i.
+
+        Computes the Jacobian of the output logits w.r.t. the per-neuron input
+        embeddings and reduces over the embedding feature dim, averaged over the
+        batch. Orientation is [post, pre] = [target i, source j], matching
+        get_adjacency() (the runner transposes once at save time).
+
+            signed=False : ||d y_i / d emb_j||_2            (magnitude, vs |A|)
+            signed=True  : magnitude * sign(sum_d d y_i/d emb_j)   (heuristic
+                           sign; for a faithful E/I sign use signed_input_jacobian
+                           through the encoder, where "more input spikes" has a
+                           well-defined direction).
+
+        Put the model in eval() first if you want deterministic BatchNorm/Dropout
+        upstream. Returns an (N, N) CPU tensor.
+        """
+        emb = embeddings.detach().clone().requires_grad_(True)
+        out = self.forward(emb, n_hops=n_hops)               # (B, N) logits
+        N = out.shape[1]
+        J = torch.zeros(N, N, device=emb.device)
+        for i in range(N):
+            g, = torch.autograd.grad(out[:, i].sum(), emb, retain_graph=(i < N - 1))
+            mag = g.norm(dim=-1)                              # (B, N_source)
+            if signed:
+                mag = mag * torch.sign(g.sum(dim=-1))
+            J[i] = mag.mean(dim=0)
+        return J.detach().cpu()
+
+    def polysynaptic_decomposition(self, embeddings, max_hops=None, signed=False):
+        """Split effective connectivity by synaptic path length.
+
+        Runs jacobian_connectivity at n_hops = 1..max_hops (default: number of
+        message-passing layers) and returns:
+            'cumulative'[k-1]  : influence using up to k hops
+            'incremental'[k-1] : influence of EXACTLY-k-hop paths (J_k - J_{k-1})
+            'mono'             : incremental[0] (direct / monosynaptic)
+            'poly'             : cumulative[-1] - cumulative[0] (all indirect)
+        Comparing 'mono' against get_adjacency() shows how much of a learned edge
+        is genuinely direct vs a shadow of multi-step propagation (the confound
+        pairwise correlation / transfer entropy collapse into one number).
+        """
+        L = len(self.layers) if max_hops is None else max_hops
+        cum = [self.jacobian_connectivity(embeddings, n_hops=k, signed=signed)
+               for k in range(1, L + 1)]
+        inc = [cum[0]] + [cum[k] - cum[k - 1] for k in range(1, L)]
+        return {"cumulative": cum, "incremental": inc,
+                "mono": cum[0], "poly": cum[-1] - cum[0]}
+
+
+def signed_input_jacobian(encoder, gnn, inputs, n_hops=None):
+    """Signed effective connectivity through the FULL pipeline (encoder + GNN).
+
+    J[i,j] = mean_batch sum_t  d y_i / d x_{j,t}: if source neuron j spikes more
+    across its input window, does target i's predicted logit rise (excitatory, +)
+    or fall (inhibitory, -)? Summing the gradient over the window collapses it to
+    a signed scalar per source, directly comparable to the signed get_adjacency().
+
+    inputs: (B, N, W) raw spike windows. `gnn` should be an InterpretableGNN if
+    n_hops is not None (so mono/poly paths can be isolated); for n_hops=None any
+    baseline GNN works. Orientation is [post, pre] = [target i, source j].
+    """
+    encoder.eval(); gnn.eval()
+    x = inputs.detach().clone().requires_grad_(True)
+    emb = encoder(x)
+    out = gnn(emb, n_hops=n_hops) if n_hops is not None else gnn(emb)
+    N = out.shape[1]
+    J = torch.zeros(N, N, device=x.device)
+    for i in range(N):
+        g, = torch.autograd.grad(out[:, i].sum(), x, retain_graph=(i < N - 1))
+        J[i] = g.sum(dim=-1).mean(dim=0)                     # signed, per source
+    return J.detach().cpu()
+
+
+# ###########################################################################
+# #                                                                         #
+# #      7. REGULARIZATION  (model_type="rate_aware")                       #
+# #                                                                         #
+# # Same scaffold, message passing, and signed adjacency as the baseline;   #
+# # the ONLY change is the L1 sparsity penalty, which is weighted per        #
+# # presynaptic neuron by inverse firing rate (see banner below). Fixes the #
+# # systematic miss of low-firing presynaptic populations.                  #
+# #                                                                         #
+# ###########################################################################
+
+# ===========================================================================
+# VARIANT 7 — Rate-aware sparsity penalty              (model_type="rate_aware")
+# Idea: the edge A[i,j] (j = presynaptic source, i = postsynaptic target) only
+# receives an upward gradient in windows where source j actually spikes, so that
+# gradient scales with j's firing rate. Meanwhile the L1 sparsity penalty applies
+# a constant, rate-blind shrinkage to every edge on every step. Low-rate sources
+# therefore lose the tug-of-war and their outgoing edges die at zero — exactly the
+# "V2 presynaptic edges found, V1 presynaptic edges missed" failure.
+#
+# Fix: weight the L1 shrinkage of each PRESYNAPTIC column j by w_j ∝ 1/(rate_j+eps),
+# normalized to mean 1 (so the average shrinkage — and thus the effective global
+# sparsity budget — matches the baseline) and clamped so a near-silent neuron does
+# not escape sparsity entirely. Edges out of low-rate sources are shrunk less and
+# can survive; high-rate sources see ~baseline pressure. The competitive penalty is
+# left rate-uniform (it only arbitrates the exc/inh sign, which is rate-independent).
+#
+# The per-column weight is a buffer read by train.compute_loss; a model without it
+# falls back to the uniform baseline penalty, so this class is the only opt-in.
+# Needs the per-neuron firing rates at construction (train_model passes them).
+# ===========================================================================
+
+class RateAwareGNN(GraphNeuralNetwork):
+    """Baseline GNN with a presynaptic-rate-weighted L1 sparsity penalty.
+
+    Identical to GraphNeuralNetwork in every forward/aggregation respect; it only
+    carries ``penalty_col_weight`` — a length-N buffer of per-presynaptic-neuron
+    (column) L1 weights ∝ 1/(rate+eps), mean-normalized and clamped — which
+    train.compute_loss multiplies into the per-column L1 shrinkage.
+
+    firing_rates : 1-D array/tensor of length num_neurons, each neuron's mean
+        spikes-per-bin (or any monotone activity measure). None → uniform weights
+        (== baseline). rate_eps : additive floor; None → mean of the rates, which
+        keeps the weighting scale-adaptive. weight_clip : cap on any single column
+        weight after normalization so a near-silent source keeps some sparsity.
+    """
+
+    def __init__(self, num_neurons, firing_rates=None, rate_eps=None,
+                 weight_clip=5.0, **kwargs):
+        super().__init__(num_neurons, **kwargs)
+        w = self._compute_col_weights(num_neurons, firing_rates, rate_eps, weight_clip)
+        # per-presynaptic-neuron (column) L1 weight; read by train.compute_loss
+        self.register_buffer("penalty_col_weight", w)
+
+    @staticmethod
+    def _compute_col_weights(num_neurons, firing_rates, rate_eps, weight_clip):
+        if firing_rates is None:
+            return torch.ones(num_neurons)
+        r = torch.as_tensor(firing_rates, dtype=torch.float32).flatten()
+        assert r.numel() == num_neurons, \
+            f"firing_rates has {r.numel()} entries, expected {num_neurons}"
+        # scale-adaptive floor: default eps = mean rate (>=0). Guard the all-silent
+        # edge case so we never divide by zero.
+        eps = float(rate_eps) if rate_eps is not None else float(r.mean())
+        if eps <= 0:
+            eps = 1.0
+        w = 1.0 / (r + eps)
+        w = w / w.mean()                       # mean 1 → same global sparsity budget
+        if weight_clip is not None:
+            w = w.clamp(max=float(weight_clip))
+            w = w / w.mean()                   # renormalize after clamping
+        return w

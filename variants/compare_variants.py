@@ -23,10 +23,12 @@ os.chdir(str(REPO_ROOT))
 
 from circuit_gnn.data import (load_yuto_network, load_pdcm_network, load_pdcm_large_network,
                               load_arbitrary_network,
-                              load_small_circuit_A_network, load_small_circuit_B_network)
+                              load_small_circuit_A_network, load_small_circuit_B_network,
+                              load_mdp_network, load_v1_v2_network, load_hc3_session)
 from circuit_gnn.utils import (calculate_fit, align_matrices,
                                 get_consistent_connections, get_top_k, sign_inference,
                                 plot_connectivity_matrix, plot_pdcm_matrix,
+                                plot_mdp_matrix, plot_v1_v2_matrix, plot_hc3_matrix,
                                 plot_metric_verification)
 
 RESULTS_BASE = VARIANTS_DIR / "results"
@@ -36,11 +38,15 @@ DATASET_REGISTRY = {
     "arbitrary":       {"loader": load_arbitrary_network,       "loader_kwargs": {"downsample_factor": 10}},
     "pdcm":            {"loader": load_pdcm_network,            "loader_kwargs": {"downsample_factor": 2}},
     "pdcm_large":      {"loader": load_pdcm_large_network,      "loader_kwargs": {"downsample_factor": 6}},
+    "mdp":             {"loader": load_mdp_network,             "loader_kwargs": {"downsample_factor": 6}},
+    "v1_v2":           {"loader": load_v1_v2_network,           "loader_kwargs": {"downsample_factor": 6}},
     "small_circuit_A": {"loader": load_small_circuit_A_network, "loader_kwargs": {"downsample_factor": 20}},
     "small_circuit_B": {"loader": load_small_circuit_B_network, "loader_kwargs": {"downsample_factor": 20}},
+    # in-vivo hc-3 session (no ground truth); same session/window as the baselines
+    "hc3":             {"loader": load_hc3_session,             "loader_kwargs": {"downsample_factor": "auto", "tar_path": "datasets/hc3/ec016.1016.tar.gz", "topdir": "ec016.58", "cell_csv": "datasets/hc3/hc3-cell.csv", "regions": ["CA3", "DG", "EC2", "EC3"], "quality_filter": True, "max_time_s": 2000}},
 }
 
-ALL_VARIANTS = [
+"""ALL_VARIANTS = [
     # batch size
     "batch_4", "batch_16", "batch_32", "batch_64",
     # GNN layers
@@ -79,6 +85,11 @@ ALL_VARIANTS = [
     "emb_32_hidden_16", "emb_32_hidden_32", "emb_32_hidden_64", "emb_32_hidden_128",
     "emb_64_hidden_16", "emb_64_hidden_32", "emb_64_hidden_64", "emb_64_hidden_128",
     "emb_128_hidden_16", "emb_128_hidden_32", "emb_128_hidden_64", "emb_128_hidden_128",
+]
+"""
+ALL_VARIANTS = [
+    # bin size
+    "bin_1ms", "bin_2ms", "bin_3ms", "bin_4ms", "bin_5ms", "bin_6ms", "bin_7ms", "bin_8ms", "bin_9ms", "bin_10ms", "bin_20ms",
 ]
 
 
@@ -135,6 +146,15 @@ def main():
         pop_labels = np.load(f"datasets/{args.dataset}/pop_labels.npy")
         def do_plot(matrix, method_name, save_dir):
             plot_pdcm_matrix(matrix, pop_labels, method_name=method_name, save_dir=save_dir)
+    elif args.dataset == "mdp":
+        def do_plot(matrix, method_name, save_dir):
+            plot_mdp_matrix(matrix, neuron_names, method_name=method_name, save_dir=save_dir)
+    elif args.dataset == "v1_v2":
+        def do_plot(matrix, method_name, save_dir):
+            plot_v1_v2_matrix(matrix, neuron_names, method_name=method_name, save_dir=save_dir)
+    elif args.dataset == "hc3":
+        def do_plot(matrix, method_name, save_dir):
+            plot_hc3_matrix(matrix, neuron_names, method_name=method_name, save_dir=save_dir)
     else:
         def do_plot(matrix, method_name, save_dir):
             plot_connectivity_matrix(matrix, neuron_names=neuron_names, method_name=method_name, save_dir=save_dir, plot_val=True)

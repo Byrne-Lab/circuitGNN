@@ -238,7 +238,7 @@ def calculate_fit(true_conn, learned_conn, plot=True):
 
     # MCC
     tn_signed = mask.sum() - tp_signed - fp_signed - fn_signed
-    denom = np.sqrt((tp_signed + fp_signed) * (tp_signed + fn_signed) *
+    denom = np.sqrt(float(tp_signed + fp_signed) * (tp_signed + fn_signed) *
                     (tn_signed + fp_signed) * (tn_signed + fn_signed))
     mcc_signed = (tp_signed * tn_signed - fp_signed * fn_signed) / denom if denom > 0 else 0.0
 
@@ -591,3 +591,201 @@ def sign_inference(X,M):
 
     # RETURN CORR & PCORR SIGNS
     return X_pcorr_sign, X_corr_sign
+
+
+def plot_mdp_matrix(matrix, neuron_names, method_name='GNN', save_dir='results'):
+    pop_order = ['23E', '23I', '4E', '4I', '5E', '5I', '6E', '6I']
+    os.makedirs(save_dir, exist_ok=True)
+    cmap = sns.diverging_palette(240, 10, as_cmap=True)
+    vmin = min(matrix.min(), -1e-6)
+    vmax = max(matrix.max(),  1e-6)
+    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(matrix,
+                xticklabels=False, yticklabels=False,
+                cmap=cmap, norm=norm,
+                cbar_kws={'label': 'Connection strength'},
+                square=True)
+
+    boundaries, tick_centers, tick_labels = [], [], []
+    cursor = 0
+    for pop in pop_order:
+        count = sum(1 for name in neuron_names if name == pop)
+        if count == 0:
+            continue
+        boundaries.append(cursor)
+        tick_centers.append(cursor + count / 2)
+        tick_labels.append(pop)
+        cursor += count
+    boundaries.append(cursor)
+
+    ax = plt.gca()
+    for b in boundaries:
+        ax.axhline(b, color='k', linewidth=0.5)
+        ax.axvline(b, color='k', linewidth=0.5)
+    ax.set_xticks(tick_centers); ax.set_xticklabels(tick_labels, fontsize=8)
+    ax.set_yticks(tick_centers); ax.set_yticklabels(tick_labels, fontsize=8, rotation=0)
+
+    plt.title(f'{method_name} Connectivity Matrix')
+    plt.xlabel('Postsynaptic')
+    plt.ylabel('Presynaptic')
+    plt.tight_layout()
+    save_path = os.path.join(save_dir, f"{method_name.replace(' ', '_').lower()}.pdf")
+    plt.savefig(save_path, format='pdf')
+    plt.close()
+
+
+def plot_v1_v2_matrix(matrix, neuron_names, method_name='GNN', save_dir='results'):
+    """Plot a V1+V2 two-area connectivity matrix.
+
+    Neurons are grouped area-by-area then population-by-population, so the matrix
+    shows four blocks (V1->V1, V2->V1, V1->V2, V2->V2). Thin lines separate
+    populations; thick lines separate the two areas. ``neuron_names`` are
+    area-qualified labels such as 'V1_23E', 'V2_4I'.
+    """
+    areas = ['V1', 'V2']
+    pop_order = ['23E', '23I', '4E', '4I', '5E', '5I', '6E', '6I']
+
+    os.makedirs(save_dir, exist_ok=True)
+    cmap = sns.diverging_palette(240, 10, as_cmap=True)
+    vmin = min(matrix.min(), -1e-6)
+    vmax = max(matrix.max(),  1e-6)
+    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(matrix,
+                xticklabels=False, yticklabels=False,
+                cmap=cmap, norm=norm,
+                cbar_kws={'label': 'Connection strength'},
+                square=True)
+
+    # Ordered 'AREA_POP' blocks present in the data
+    block_labels = []
+    for area in areas:
+        for pop in pop_order:
+            label = f'{area}_{pop}'
+            if any(name == label for name in neuron_names):
+                block_labels.append(label)
+
+    # Thin population boundaries + tick labels
+    boundaries, tick_centers, tick_labels = [], [], []
+    cursor = 0
+    for label in block_labels:
+        count = sum(1 for name in neuron_names if name == label)
+        boundaries.append(cursor)
+        tick_centers.append(cursor + count / 2)
+        tick_labels.append(label)
+        cursor += count
+    boundaries.append(cursor)
+
+    ax = plt.gca()
+    for b in boundaries:
+        ax.axhline(b, color='k', linewidth=0.4, alpha=0.5)
+        ax.axvline(b, color='k', linewidth=0.4, alpha=0.5)
+
+    # Thick area boundaries
+    cursor = 0
+    for area in areas:
+        a_count = sum(1 for name in neuron_names if name.startswith(area + '_'))
+        if cursor > 0:
+            ax.axhline(cursor, color='k', linewidth=1.8)
+            ax.axvline(cursor, color='k', linewidth=1.8)
+        cursor += a_count
+
+    ax.set_xticks(tick_centers); ax.set_xticklabels(tick_labels, fontsize=6, rotation=90)
+    ax.set_yticks(tick_centers); ax.set_yticklabels(tick_labels, fontsize=6, rotation=0)
+
+    plt.title(f'{method_name} Connectivity Matrix')
+    plt.xlabel('Postsynaptic')
+    plt.ylabel('Presynaptic')
+    plt.tight_layout()
+    save_path = os.path.join(save_dir, f"{method_name.replace(' ', '_').lower()}.pdf")
+    plt.savefig(save_path, format='pdf')
+    plt.close()
+
+
+def plot_hc3_matrix(matrix, neuron_names, method_name='GNN', save_dir='results'):
+    """Heatmap of the learned adjacency for a CRCNS hc-3 session, grouped into
+    brain-region blocks with putative E/I cell types marked along both axes.
+
+    ``neuron_names`` are '<region>_<ctype>_e<ele>c<clu>' and the loader orders
+    units by region then cell type, so region blocks are contiguous. There is no
+    ground-truth connectivity for in-vivo data, so this only shows the learned A;
+    the 'p'/'i'/'n' cell-type tag is the reference (Kobayashi et al.).
+    """
+    from matplotlib.patches import Rectangle, Patch
+
+    os.makedirs(save_dir, exist_ok=True)
+    cmap = sns.diverging_palette(240, 10, as_cmap=True)
+    vmin = min(matrix.min(), -1e-6)
+    vmax = max(matrix.max(),  1e-6)
+    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(matrix,
+                xticklabels=False, yticklabels=False,
+                cmap=cmap, norm=norm,
+                cbar_kws={'label': 'Connection strength'},
+                square=True)
+
+    ax = plt.gca()
+    n = len(neuron_names)
+    regions = [name.split('_')[0] for name in neuron_names]
+    ctypes  = [name.split('_')[1] if len(name.split('_')) > 1 else 'n'
+               for name in neuron_names]
+
+    def contiguous_runs(seq):               # (start, length, value) per contiguous run
+        runs, i = [], 0
+        while i < len(seq):
+            j = i
+            while j < len(seq) and seq[j] == seq[i]:
+                j += 1
+            runs.append((i, j - i, seq[i]))
+            i = j
+        return runs
+
+    # region blocks: boundary lines (loader orders units by region, so contiguous)
+    region_runs = contiguous_runs(regions)
+    for b in [0] + [start + length for start, length, _ in region_runs]:
+        ax.axhline(b, color='k', linewidth=0.5)
+        ax.axvline(b, color='k', linewidth=0.5)
+    # postsynaptic (columns) region labels along the bottom
+    region_centers = [start + length / 2 for start, length, _ in region_runs]
+    region_names   = [name for _, _, name in region_runs]
+    ax.set_xticks(region_centers); ax.set_xticklabels(region_names, fontsize=8)
+
+    # Cell-type color strips: mark each unit's putative excitatory (pyramidal, 'p')
+    # vs inhibitory (interneuron, 'i') identity from its name tag. No ground-truth
+    # connectivity exists in vivo, so this E/I label is the reference.
+    type_color = {'p': '#c44e52', 'i': '#4c72b0', 'n': '#cfcfcf'}
+    type_label = {'p': 'Excitatory (pyramidal)',
+                  'i': 'Inhibitory (interneuron)',
+                  'n': 'Unclassified'}
+    strip = max(0.8, n * 0.02)              # strip thickness, in matrix-cell units
+    for start, length, ct in contiguous_runs(ctypes):
+        color = type_color.get(ct, type_color['n'])
+        ax.add_patch(Rectangle((-strip, start), strip, length,   # rows -> left edge
+                               facecolor=color, edgecolor='none', clip_on=False, zorder=5))
+        ax.add_patch(Rectangle((start, -strip), length, strip,   # cols -> top edge
+                               facecolor=color, edgecolor='none', clip_on=False, zorder=5))
+
+    # presynaptic (row) region labels sit outside the left color strip
+    ax.set_yticks([])
+    for start, length, name in region_runs:
+        ax.text(-strip - 0.5, start + length / 2, name,
+                ha='right', va='center', fontsize=8)
+
+    present = [ct for ct in ('p', 'i', 'n') if ct in ctypes]
+    handles = [Patch(facecolor=type_color[ct], label=type_label[ct]) for ct in present]
+    ax.legend(handles=handles, title='Cell type', ncol=len(handles),
+              loc='upper center', bbox_to_anchor=(0.5, -0.11),
+              fontsize=8, title_fontsize=8, frameon=False)
+
+    plt.title(f'{method_name} Connectivity Matrix')
+    plt.xlabel('Postsynaptic')
+    plt.ylabel('Presynaptic', labelpad=20)
+    plt.tight_layout()
+    save_path = os.path.join(save_dir, f"{method_name.replace(' ', '_').lower()}.pdf")
+    plt.savefig(save_path, format='pdf', bbox_inches='tight')
+    plt.close()

@@ -10,20 +10,36 @@ import numpy as np
 import os
 import time
 import itertools
+from functools import partial
 from circuit_gnn.data import *
 from circuit_gnn.utils import *
 from spycon.coninf import CoincidenceIndex, Smoothed_CCG, directed_STTC, GLMCC, GLMPP
+
+# hc3 is in-vivo (no ground truth); load_hc3_session needs session-specific
+# kwargs but returns the same (binned_spikes, true_conn, neuron_names) shape and
+# takes downsample_factor first, so partial slots it into the loader map.
+load_hc3 = partial(
+    load_hc3_session,
+    tar_path='datasets/hc3/ec016.1016.tar.gz',
+    topdir='ec016.58',
+    cell_csv='datasets/hc3/hc3-cell.csv',
+    regions=['CA3', 'DG', 'EC2', 'EC3'],
+    quality_filter=True,
+    max_time_s=2000,
+)
 
 data_map = {
     'yuto':      load_yuto_network,
     'arbitrary': load_arbitrary_network,
     'pdcm':      load_pdcm_network,
+    'hc3':       load_hc3,
 }
 
 bin_size_map = {
     'yuto':      lambda f: 0.5e-3 * f,
     'arbitrary': lambda f: 1e-3 * f,
     'pdcm':      lambda f: f / 1000.0,
+    'hc3':       lambda f: f / 1000.0,   # native resolution 1 ms
 }
 
 
@@ -96,7 +112,7 @@ def ofat(cls, prefix, **axes):
     return out
 
 
-for data in ['yuto', 'arbitrary', 'pdcm']:
+for data in ['hc3']:
 
     # 1 ms bins to accurately get spike times
     if data == 'yuto':
@@ -105,6 +121,8 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
         downsample_factor = 1  # 1 ms
     elif data == 'pdcm':
         downsample_factor = 1  # 1 ms
+    elif data == 'hc3':
+        downsample_factor = 1  # 1 ms (native resolution)
 
     bin_size_sec = bin_size_map[data](downsample_factor)
 
@@ -126,7 +144,7 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
         'glmcc_default': GLMCC(),
         'glmpp_default': GLMPP(),
     }
-
+    """
     methods.update(factorial(CoincidenceIndex, 'ci',
         binsize=[1e-3, 2e-3, 5e-3, 10e-3],
         syn_tau=[3e-3, 6e-3, 10e-3, 20e-3]))
@@ -144,8 +162,7 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
 
     methods.update(ofat(GLMPP, 'glmpp',
         tau=[2e-3, 5e-3, 10e-3, 20e-3]))
-
-
+    """
     for name, method in methods.items():
         start = time.time()
         result = method.infer_connectivity(times, ids)

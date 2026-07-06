@@ -14,6 +14,8 @@ toy_phantom
 variants/variant_distribution.py
 plot_thresholds.py
 plot_variant.py
-encoder_interpretability.py
+encoder_interpretability*.py
 plot_variant_distribution.py
 analyze_interpretable.py    
+results*
+relevant_files

@@ -829,3 +829,351 @@ def load_pdcm_large_network(downsample_factor='auto', gap=0, step=0):
     plt.close()
 
     return binned_spikes, true_conn, neuron_names
+
+
+def load_mdp_network(downsample_factor='auto', gap=0, step=0):
+    """
+    Load the multi-area-model mdp simulation dataset.
+
+    Parameters
+    ----------
+    downsample_factor : int or 'auto'
+        If 'auto' (default), the bin is chosen by occupancy (see
+        circuit_gnn.optimal_bin_size); otherwise used as below.
+        Bin size in ms (e.g. 10 -> 10 ms bins).
+    gap : ignored
+        Kept for API compatibility with other loaders.
+
+    Returns
+    -------
+    binned_spikes : ndarray (n_neurons, n_timebins)
+        Spike counts per bin.
+    true_conn : ndarray (n_neurons, n_neurons)
+        Signed synaptic weight matrix [pre, post] (rows=source, cols=target).
+        Positive = excitatory, negative = inhibitory, 0 = no connection.
+    neuron_names : list of str
+        Population label for each neuron (e.g. '23E', '4I', ...).
+    """
+
+    # Load raw files
+    data_dir = 'datasets/mdp'
+
+    W_saved = np.load(f'{data_dir}/ground_truth_weights.npy')   # (N, N)
+    true_conn = W_saved.T.astype(np.float64)                    # (N, N) [pre, post]
+
+    spike_data = np.load(f'{data_dir}/spikes.npy')              # (S, 2): [neuron_idx, time_ms]
+    gids = np.load(f'{data_dir}/neuron_gids.npy')               # (N,)
+
+    with open(f'{data_dir}/neuron_info.json') as f:
+        neuron_info = json.load(f)                              # gid_str -> {pop, local_idx}
+
+    n_neurons = true_conn.shape[0]
+
+    # Build neuron index -> population name
+
+    idx_to_pop = {}
+    for gid_str, info in neuron_info.items():
+        gid = int(gid_str)
+        idx = int(np.searchsorted(gids, gid))
+        if idx < len(gids) and gids[idx] == gid:
+            idx_to_pop[idx] = info['pop']
+
+    pop_order = ['23E', '23I', '4E', '4I', '5E', '5I', '6E', '6I']
+    neuron_names = [idx_to_pop.get(i, 'unknown') for i in range(n_neurons)]
+
+    # Bin spikes
+
+    spike_idx = spike_data[:, 0].astype(int)
+    spike_times_ms = spike_data[:, 1]
+    sim_dur_ms = spike_times_ms.max()
+
+    # resolve 'auto' from a native 1 ms binning before choosing the final bin
+    if isinstance(downsample_factor, str):
+        native_bins = int(sim_dur_ms // 1)
+        native = np.zeros((n_neurons, native_bins), dtype=np.int32)
+        nt_idx = np.floor(spike_times_ms / 1).astype(int)
+        nvalid = (nt_idx >= 0) & (nt_idx < native_bins)
+        np.add.at(native, (spike_idx[nvalid], nt_idx[nvalid]), 1)
+        downsample_factor = resolve_downsample(downsample_factor, native, 1.0)
+
+    n_bins = int(sim_dur_ms // downsample_factor)
+    binned_spikes = np.zeros((n_neurons, n_bins), dtype=np.int32)
+
+    t_idx = np.floor(spike_times_ms / downsample_factor).astype(int)
+    valid = (t_idx >= 0) & (t_idx < n_bins)
+    np.add.at(binned_spikes, (spike_idx[valid], t_idx[valid]), 1)
+
+    print(f"Loaded mdp network: {n_neurons} neurons, {sim_dur_ms/1000:.1f} s simulation")
+    print(f"Binned spikes shape: {binned_spikes.shape}  (bin size = {downsample_factor} ms)")
+    print(f"Binned spikes possibilities: {np.unique(binned_spikes)}")
+    mean_rate = spike_data.shape[0] / n_neurons / (sim_dur_ms / 1000.) if sim_dur_ms > 0 else 0
+    print(f"Mean firing rate: {mean_rate:.2f} Hz")
+
+    # Raster plot
+
+    pop_colors = {
+        '23E': '#4878CF', '23I': '#D65F5F',
+        '4E':  '#6ACC65', '4I':  '#B47CC7',
+        '5E':  '#C4AD66', '5I':  '#77BEDB',
+        '6E':  '#F7910A', '6I':  '#999999',
+    }
+
+    spike_times_by_neuron = [
+        np.where(binned_spikes[i] > 0)[0] * downsample_factor / 1000.
+        for i in range(n_neurons)
+    ]
+    colors_per_neuron = [pop_colors.get(neuron_names[i], '#aaaaaa') for i in range(n_neurons)]
+
+    plt.figure(figsize=(12, 5))
+    plt.eventplot(spike_times_by_neuron, orientation='horizontal',
+                  linelengths=0.8, colors=colors_per_neuron)
+
+    # Population boundary lines + labels
+    cursor = 0
+    for pop in pop_order:
+        count = sum(1 for name in neuron_names if name == pop)
+        if count == 0:
+            continue
+        if cursor > 0:
+            plt.axhline(cursor - 0.5, color='k', linewidth=0.5, alpha=0.5)
+        plt.text(sim_dur_ms / 1000. * 1.001, cursor + count / 2,
+                 pop, va='center', fontsize=7,
+                 color=pop_colors.get(pop, 'k'))
+        cursor += count
+
+    plt.xlabel('Time (s)')
+    plt.ylabel('Neuron Index')
+    plt.title(f'MDP Spike Raster  ({n_neurons} neurons, bin={downsample_factor} ms)')
+    plt.tight_layout()
+    plt.savefig(f'{data_dir}/raster.pdf', format='pdf')
+    plt.close()
+
+    # Connectivity heatmap
+
+    cmap = sns.diverging_palette(240, 10, as_cmap=True)
+    vmin = min(true_conn.min(), -1e-6)
+    vmax = max(true_conn.max(),  1e-6)
+    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(true_conn,
+                xticklabels=False, yticklabels=False,
+                cmap=cmap, norm=norm,
+                cbar_kws={'label': 'Synaptic weight (mV)'},
+                square=True)
+
+    # Population boundary lines
+    boundaries, tick_centers, tick_labels = [], [], []
+    cursor = 0
+    for pop in pop_order:
+        count = sum(1 for name in neuron_names if name == pop)
+        if count == 0:
+            continue
+        boundaries.append(cursor)
+        tick_centers.append(cursor + count / 2)
+        tick_labels.append(pop)
+        cursor += count
+    boundaries.append(cursor)
+
+    ax = plt.gca()
+    for b in boundaries:
+        ax.axhline(b, color='k', linewidth=0.5)
+        ax.axvline(b, color='k', linewidth=0.5)
+    ax.set_xticks(tick_centers); ax.set_xticklabels(tick_labels, fontsize=8)
+    ax.set_yticks(tick_centers); ax.set_yticklabels(tick_labels, fontsize=8, rotation=0)
+
+    plt.title('True Connectivity (MDP, multi-area-model)')
+    plt.xlabel('Postsynaptic (target)')
+    plt.ylabel('Presynaptic (source)')
+    plt.tight_layout()
+    plt.savefig(f'{data_dir}/ground_truth.pdf', format='pdf')
+    plt.close()
+
+    return binned_spikes, true_conn, neuron_names
+
+
+def load_v1_v2_network(downsample_factor='auto', gap=0, step=0):
+    """
+    Load the multi-area-model V1+V2 two-area simulation dataset.
+
+    Both areas are simulated together, so the connectivity matrix has four
+    blocks: V1->V1, V2->V1, V1->V2, V2->V2 (the off-diagonal blocks are the real
+    cortico-cortical synapses between the two areas). Neurons are ordered
+    area-by-area then population-by-population (V1 23E ... V1 6I, V2 23E ... V2 6I).
+
+    Parameters
+    ----------
+    downsample_factor : int or 'auto'
+        If 'auto' (default), the bin is chosen by occupancy (see
+        circuit_gnn.optimal_bin_size); otherwise used as below.
+        Bin size in ms (e.g. 10 -> 10 ms bins).
+    gap : ignored
+        Kept for API compatibility with other loaders.
+
+    Returns
+    -------
+    binned_spikes : ndarray (n_neurons, n_timebins)
+        Spike counts per bin.
+    true_conn : ndarray (n_neurons, n_neurons)
+        Signed synaptic weight matrix [pre, post] (rows=source, cols=target).
+        Positive = excitatory, negative = inhibitory, 0 = no connection.
+    neuron_names : list of str
+        Area-qualified population label for each neuron (e.g. 'V1_23E', 'V2_4I').
+    """
+
+    # Load raw files
+    data_dir = 'datasets/v1_v2'
+    areas = ['V1', 'V2']
+    pop_order = ['23E', '23I', '4E', '4I', '5E', '5I', '6E', '6I']
+
+    W_saved = np.load(f'{data_dir}/ground_truth_weights.npy')   # (N, N)
+    true_conn = W_saved.T.astype(np.float64)                    # (N, N) [pre, post]
+
+    spike_data = np.load(f'{data_dir}/spikes.npy')              # (S, 2): [neuron_idx, time_ms]
+    gids = np.load(f'{data_dir}/neuron_gids.npy')               # (N,) index order
+
+    with open(f'{data_dir}/neuron_info.json') as f:
+        neuron_info = json.load(f)                              # gid_str -> {area, pop, local_idx}
+
+    n_neurons = true_conn.shape[0]
+
+    # Build neuron index -> 'AREA_POP' label.
+    # gids is stored in index order (block layout), so position == neuron index.
+    neuron_names = ['unknown'] * n_neurons
+    for idx, gid in enumerate(gids):
+        info = neuron_info[str(int(gid))]
+        neuron_names[idx] = f"{info['area']}_{info['pop']}"
+
+    # Ordered list of populated 'AREA_POP' blocks, matching the run-script layout
+    block_labels = []
+    for area in areas:
+        for pop in pop_order:
+            label = f'{area}_{pop}'
+            if any(name == label for name in neuron_names):
+                block_labels.append(label)
+
+    # Bin spikes
+    spike_idx = spike_data[:, 0].astype(int)
+    spike_times_ms = spike_data[:, 1]
+    sim_dur_ms = spike_times_ms.max()
+
+    # resolve 'auto' from a native 1 ms binning before choosing the final bin
+    if isinstance(downsample_factor, str):
+        native_bins = int(sim_dur_ms // 1)
+        native = np.zeros((n_neurons, native_bins), dtype=np.int32)
+        nt_idx = np.floor(spike_times_ms / 1).astype(int)
+        nvalid = (nt_idx >= 0) & (nt_idx < native_bins)
+        np.add.at(native, (spike_idx[nvalid], nt_idx[nvalid]), 1)
+        downsample_factor = resolve_downsample(downsample_factor, native, 1.0)
+
+    n_bins = int(sim_dur_ms // downsample_factor)
+    binned_spikes = np.zeros((n_neurons, n_bins), dtype=np.int32)
+
+    t_idx = np.floor(spike_times_ms / downsample_factor).astype(int)
+    valid = (t_idx >= 0) & (t_idx < n_bins)
+    np.add.at(binned_spikes, (spike_idx[valid], t_idx[valid]), 1)
+
+    print(f"Loaded V1+V2 network: {n_neurons} neurons, {sim_dur_ms/1000:.1f} s simulation")
+    print(f"Binned spikes shape: {binned_spikes.shape}  (bin size = {downsample_factor} ms)")
+    print(f"Binned spikes possibilities: {np.unique(binned_spikes)}")
+    mean_rate = spike_data.shape[0] / n_neurons / (sim_dur_ms / 1000.) if sim_dur_ms > 0 else 0
+    print(f"Mean firing rate: {mean_rate:.2f} Hz")
+
+    # Raster plot
+
+    pop_colors = {
+        '23E': '#4878CF', '23I': '#D65F5F',
+        '4E':  '#6ACC65', '4I':  '#B47CC7',
+        '5E':  '#C4AD66', '5I':  '#77BEDB',
+        '6E':  '#F7910A', '6I':  '#999999',
+    }
+
+    def color_for(label):
+        # label is 'AREA_POP'; color by population
+        return pop_colors.get(label.split('_', 1)[1], '#aaaaaa')
+
+    spike_times_by_neuron = [
+        np.where(binned_spikes[i] > 0)[0] * downsample_factor / 1000.
+        for i in range(n_neurons)
+    ]
+    colors_per_neuron = [color_for(neuron_names[i]) for i in range(n_neurons)]
+
+    plt.figure(figsize=(12, 6))
+    plt.eventplot(spike_times_by_neuron, orientation='horizontal',
+                  linelengths=0.8, colors=colors_per_neuron)
+
+    # Thin population boundary lines + labels
+    cursor = 0
+    for label in block_labels:
+        count = sum(1 for name in neuron_names if name == label)
+        if cursor > 0:
+            plt.axhline(cursor - 0.5, color='k', linewidth=0.4, alpha=0.4)
+        plt.text(sim_dur_ms / 1000. * 1.001, cursor + count / 2,
+                 label, va='center', fontsize=6, color=color_for(label))
+        cursor += count
+    # Thick area boundary lines
+    cursor = 0
+    for area in areas:
+        a_count = sum(1 for name in neuron_names if name.startswith(area + '_'))
+        if cursor > 0:
+            plt.axhline(cursor - 0.5, color='k', linewidth=1.6)
+        cursor += a_count
+
+    plt.xlabel('Time (s)')
+    plt.ylabel('Neuron Index')
+    plt.title(f'V1+V2 Spike Raster  ({n_neurons} neurons, bin={downsample_factor} ms)')
+    plt.tight_layout()
+    plt.savefig(f'{data_dir}/raster.pdf', format='pdf')
+    plt.close()
+
+    # Connectivity heatmap
+
+    cmap = sns.diverging_palette(240, 10, as_cmap=True)
+    vmin = min(true_conn.min(), -1e-6)
+    vmax = max(true_conn.max(),  1e-6)
+    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(true_conn,
+                xticklabels=False, yticklabels=False,
+                cmap=cmap, norm=norm,
+                cbar_kws={'label': 'Synaptic weight (mV)'},
+                square=True)
+
+    ax = plt.gca()
+
+    # Thin population boundary lines + tick labels
+    boundaries, tick_centers, tick_labels = [], [], []
+    cursor = 0
+    for label in block_labels:
+        count = sum(1 for name in neuron_names if name == label)
+        boundaries.append(cursor)
+        tick_centers.append(cursor + count / 2)
+        tick_labels.append(label)
+        cursor += count
+    boundaries.append(cursor)
+
+    for b in boundaries:
+        ax.axhline(b, color='k', linewidth=0.4, alpha=0.5)
+        ax.axvline(b, color='k', linewidth=0.4, alpha=0.5)
+
+    # Thick area boundary lines
+    cursor = 0
+    for area in areas:
+        a_count = sum(1 for name in neuron_names if name.startswith(area + '_'))
+        if cursor > 0:
+            ax.axhline(cursor, color='k', linewidth=1.8)
+            ax.axvline(cursor, color='k', linewidth=1.8)
+        cursor += a_count
+
+    ax.set_xticks(tick_centers); ax.set_xticklabels(tick_labels, fontsize=6, rotation=90)
+    ax.set_yticks(tick_centers); ax.set_yticklabels(tick_labels, fontsize=6, rotation=0)
+
+    plt.title('True Connectivity (V1+V2, multi-area-model)')
+    plt.xlabel('Postsynaptic (target)')
+    plt.ylabel('Presynaptic (source)')
+    plt.tight_layout()
+    plt.savefig(f'{data_dir}/ground_truth.pdf', format='pdf')
+    plt.close()
+
+    return binned_spikes, true_conn, neuron_names

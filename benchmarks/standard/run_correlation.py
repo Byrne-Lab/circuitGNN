@@ -12,14 +12,28 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import time
+from functools import partial
 from circuit_gnn.data import *
 from circuit_gnn.utils import *
-data_map = {'yuto': load_yuto_network, 'arbitrary': load_arbitrary_network, 'pdcm': load_pdcm_network}
 
-native_res_ms = {'yuto': 0.5, 'arbitrary': 1.0, 'pdcm': 1.0} # in ms
+# hc3 is in-vivo (no ground truth); load_hc3_session needs session-specific
+# kwargs but returns the same shape and takes downsample_factor first.
+load_hc3 = partial(
+    load_hc3_session,
+    tar_path='datasets/hc3/ec016.1016.tar.gz',
+    topdir='ec016.58',
+    cell_csv='datasets/hc3/hc3-cell.csv',
+    regions=['CA3', 'DG', 'EC2', 'EC3'],
+    quality_filter=True,
+    max_time_s=2000,
+)
+
+data_map = {'yuto': load_yuto_network, 'arbitrary': load_arbitrary_network, 'pdcm': load_pdcm_network, 'hc3': load_hc3}
+
+native_res_ms = {'yuto': 0.5, 'arbitrary': 1.0, 'pdcm': 1.0, 'hc3': 1.0} # in ms
 bin_sizes_ms = [1, 2, 5, 10, 50]
 
-for data in ['yuto', 'arbitrary', 'pdcm']:
+for data in ['hc3']:
     for bin_size_ms in bin_sizes_ms:
 
         downsample_factor = int(bin_size_ms / native_res_ms[data])

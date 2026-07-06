@@ -21,9 +21,9 @@ REPO_ROOT = VARIANTS_DIR.parent
 sys.path.insert(0, str(VARIANTS_DIR))
 os.chdir(str(REPO_ROOT))
 
-from circuit_gnn.data import load_yuto_network, load_pdcm_network, load_pdcm_large_network, load_arbitrary_network, load_small_circuit_A_network, load_small_circuit_B_network
+from circuit_gnn.data import load_yuto_network, load_pdcm_network, load_pdcm_large_network, load_arbitrary_network, load_small_circuit_A_network, load_small_circuit_B_network, load_mdp_network, load_v1_v2_network, load_hc3_session
 from circuit_gnn.train import TrainConfig, train_model, load_checkpoint
-from circuit_gnn.utils import plot_connectivity_matrix, plot_pdcm_matrix
+from circuit_gnn.utils import plot_connectivity_matrix, plot_pdcm_matrix, plot_mdp_matrix, plot_v1_v2_matrix, plot_hc3_matrix
 
 RESULTS_BASE = VARIANTS_DIR / "results"
 
@@ -65,37 +65,37 @@ VARIANTS = {
 
     # bin size via downsample factor
     "bin_1ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 2, "pdcm": 1, "pdcm_large": 1, "arbitrary": 1, "small_circuit_A": 2, "small_circuit_B": 2},
+                       "downsample_override": {"yuto": 2, "pdcm": 1, "pdcm_large": 1, "mdp": 1, "v1_v2": 1, "arbitrary": 1, "small_circuit_A": 2, "small_circuit_B": 2},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
     "bin_2ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 4, "pdcm": 2, "pdcm_large": 2, "arbitrary": 2, "small_circuit_A": 4, "small_circuit_B": 4},
+                       "downsample_override": {"yuto": 4, "pdcm": 2, "pdcm_large": 2, "mdp": 2, "v1_v2": 2, "arbitrary": 2, "small_circuit_A": 4, "small_circuit_B": 4},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
     "bin_3ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 6, "pdcm": 3, "pdcm_large": 3, "arbitrary": 3, "small_circuit_A": 6, "small_circuit_B": 6},
+                       "downsample_override": {"yuto": 6, "pdcm": 3, "pdcm_large": 3, "mdp": 3, "v1_v2": 3, "arbitrary": 3, "small_circuit_A": 6, "small_circuit_B": 6},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
     "bin_4ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 8, "pdcm": 4, "pdcm_large": 4, "arbitrary": 4, "small_circuit_A": 8, "small_circuit_B": 8},
+                       "downsample_override": {"yuto": 8, "pdcm": 4, "pdcm_large": 4, "mdp": 4, "v1_v2": 4, "arbitrary": 4, "small_circuit_A": 8, "small_circuit_B": 8},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
     "bin_5ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 10, "pdcm": 5, "pdcm_large": 5, "arbitrary": 5, "small_circuit_A": 10, "small_circuit_B": 10},
+                       "downsample_override": {"yuto": 10, "pdcm": 5, "pdcm_large": 5, "mdp": 5, "v1_v2": 5, "arbitrary": 5, "small_circuit_A": 10, "small_circuit_B": 10},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
     "bin_6ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 12, "pdcm": 6, "pdcm_large": 6, "arbitrary": 6, "small_circuit_A": 12, "small_circuit_B": 12},
+                       "downsample_override": {"yuto": 12, "pdcm": 6, "pdcm_large": 6, "mdp": 6, "v1_v2": 6, "arbitrary": 6, "small_circuit_A": 12, "small_circuit_B": 12},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
     "bin_7ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 14, "pdcm": 7, "pdcm_large": 7, "arbitrary": 7, "small_circuit_A": 14, "small_circuit_B": 14},
+                       "downsample_override": {"yuto": 14, "pdcm": 7, "pdcm_large": 7, "mdp": 7, "v1_v2": 7, "arbitrary": 7, "small_circuit_A": 14, "small_circuit_B": 14},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
     "bin_8ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 16, "pdcm": 8, "pdcm_large": 8, "arbitrary": 8, "small_circuit_A": 16, "small_circuit_B": 16},
+                       "downsample_override": {"yuto": 16, "pdcm": 8, "pdcm_large": 8, "mdp": 8, "v1_v2": 8, "arbitrary": 8, "small_circuit_A": 16, "small_circuit_B": 16},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
     "bin_9ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 18, "pdcm": 9, "pdcm_large": 9, "arbitrary": 9, "small_circuit_A": 18, "small_circuit_B": 18},
+                       "downsample_override": {"yuto": 18, "pdcm": 9, "pdcm_large": 9, "mdp": 9, "v1_v2": 9, "arbitrary": 9, "small_circuit_A": 18, "small_circuit_B": 18},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
     "bin_10ms":       {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 20, "pdcm": 10, "pdcm_large": 10, "arbitrary": 10, "small_circuit_A": 20, "small_circuit_B": 20},
+                       "downsample_override": {"yuto": 20, "pdcm": 10, "pdcm_large": 10, "mdp": 10, "v1_v2": 10, "arbitrary": 10, "small_circuit_A": 20, "small_circuit_B": 20},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
     "bin_20ms":       {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 40, "pdcm": 20, "pdcm_large": 20, "arbitrary": 20, "small_circuit_A": 40, "small_circuit_B": 40},
+                       "downsample_override": {"yuto": 40, "pdcm": 20, "pdcm_large": 20, "mdp": 20, "v1_v2": 20, "arbitrary": 20, "small_circuit_A": 40, "small_circuit_B": 40},
                        "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
 
     # window size
@@ -325,6 +325,18 @@ DATASET_REGISTRY = {
         "num_epochs": 50,
         "default_window": 100,
     },
+    "mdp": {
+        "loader": load_mdp_network,
+        "loader_kwargs": {"downsample_factor": 6},
+        "num_epochs": 50,
+        "default_window": 100,
+    },
+    "v1_v2": {
+        "loader": load_v1_v2_network,
+        "loader_kwargs": {"downsample_factor": 6},
+        "num_epochs": 50,
+        "default_window": 100,
+    },
     "small_circuit_A": {
         "loader": load_small_circuit_A_network,
         "loader_kwargs": {"downsample_factor": 20},
@@ -334,6 +346,14 @@ DATASET_REGISTRY = {
     "small_circuit_B": {
         "loader": load_small_circuit_B_network,
         "loader_kwargs": {"downsample_factor": 20},
+        "num_epochs": 20,
+        "default_window": 100,
+    },
+    # in-vivo hc-3 session (no ground truth); same session/window as the baselines.
+    # downsample_factor='auto' is resolved inside the loader (native res 1 ms).
+    "hc3": {
+        "loader": load_hc3_session,
+        "loader_kwargs": {"downsample_factor": "auto", "tar_path": "datasets/hc3/ec016.1016.tar.gz", "topdir": "ec016.58", "cell_csv": "datasets/hc3/hc3-cell.csv", "regions": ["CA3", "DG", "EC2", "EC3"], "quality_filter": True, "max_time_s": 2000},
         "num_epochs": 20,
         "default_window": 100,
     },
@@ -389,7 +409,10 @@ def run_dataset_variant(
         effective_ds = override[dataset_name]
     else:
         base_ds = dataset_cfg["loader_kwargs"]["downsample_factor"]
-        effective_ds = max(1, round(base_ds * variant_spec.get("downsample_scale", 1.0)))
+        if isinstance(base_ds, str):
+            effective_ds = base_ds  # e.g. 'auto' — resolved by occupancy inside the loader
+        else:
+            effective_ds = max(1, round(base_ds * variant_spec.get("downsample_scale", 1.0)))
     loader_kwargs = {**dataset_cfg["loader_kwargs"], "downsample_factor": effective_ds}
 
     print(f"  Loading {dataset_name} data (downsample_factor={effective_ds})...")
@@ -448,6 +471,12 @@ def run_dataset_variant(
         np.save(output_dir / f"gnn_{run_idx}.npy", learned_A)
         if dataset_name in ('pdcm', 'pdcm_large'):
             plot_pdcm_matrix(learned_A, pop_labels, method_name=f"GNN {run_idx}", save_dir=str(output_dir))
+        elif dataset_name == 'mdp':
+            plot_mdp_matrix(learned_A, neuron_names, method_name=f"GNN {run_idx}", save_dir=str(output_dir))
+        elif dataset_name == 'v1_v2':
+            plot_v1_v2_matrix(learned_A, neuron_names, method_name=f"GNN {run_idx}", save_dir=str(output_dir))
+        elif dataset_name == 'hc3':
+            plot_hc3_matrix(learned_A, neuron_names, method_name=f"GNN {run_idx}", save_dir=str(output_dir))
         else:
             plot_connectivity_matrix(learned_A, neuron_names=neuron_names,
                                      method_name=f"GNN {run_idx}", save_dir=str(output_dir))

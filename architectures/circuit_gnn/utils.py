@@ -238,7 +238,7 @@ def calculate_fit(true_conn, learned_conn, plot=True):
 
     # MCC
     tn_signed = mask.sum() - tp_signed - fp_signed - fn_signed
-    denom = np.sqrt((tp_signed + fp_signed) * (tp_signed + fn_signed) *
+    denom = np.sqrt(float(tp_signed + fp_signed) * (tp_signed + fn_signed) *
                     (tn_signed + fp_signed) * (tn_signed + fn_signed))
     mcc_signed = (tp_signed * tn_signed - fp_signed * fn_signed) / denom if denom > 0 else 0.0
 
@@ -375,7 +375,7 @@ def plot_metric_verification(true_conn, learned_conn, save_dir, method_name="con
     prec = tp / (tp + fp) if (tp + fp) else 0.0
     rec = tp / (tp + fn) if (tp + fn) else 0.0
     f1 = 2 * prec * rec / (prec + rec) if (prec + rec) else 0.0
-    du = np.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+    du = np.sqrt(float(tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
     mcc_u = (tp * tn - fp * fn) / du if du > 0 else 0.0
 
     # signed confusion (sign flip counts as FP only)
@@ -388,7 +388,7 @@ def plot_metric_verification(true_conn, learned_conn, save_dir, method_name="con
     precs = tps / (tps + fps) if (tps + fps) else 0.0
     recs = tps / (tps + fns) if (tps + fns) else 0.0
     f1s = 2 * precs * recs / (precs + recs) if (precs + recs) else 0.0
-    ds = np.sqrt((tps + fps) * (tps + fns) * (tns + fps) * (tns + fns))
+    ds = np.sqrt(float(tps + fps) * (tps + fns) * (tns + fps) * (tns + fns))
     mcc_s = (tps * tns - fps * fns) / ds if ds > 0 else 0.0
 
     # AUROC (rank edges by |learned|)
@@ -591,3 +591,168 @@ def sign_inference(X,M):
 
     # RETURN CORR & PCORR SIGNS
     return X_pcorr_sign, X_corr_sign
+
+
+def plot_mdp_matrix(matrix, neuron_names, method_name='GNN', save_dir='results'):
+    pop_order = ['23E', '23I', '4E', '4I', '5E', '5I', '6E', '6I']
+    os.makedirs(save_dir, exist_ok=True)
+    cmap = sns.diverging_palette(240, 10, as_cmap=True)
+    vmin = min(matrix.min(), -1e-6)
+    vmax = max(matrix.max(),  1e-6)
+    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(matrix,
+                xticklabels=False, yticklabels=False,
+                cmap=cmap, norm=norm,
+                cbar_kws={'label': 'Connection strength'},
+                square=True)
+
+    boundaries, tick_centers, tick_labels = [], [], []
+    cursor = 0
+    for pop in pop_order:
+        count = sum(1 for name in neuron_names if name == pop)
+        if count == 0:
+            continue
+        boundaries.append(cursor)
+        tick_centers.append(cursor + count / 2)
+        tick_labels.append(pop)
+        cursor += count
+    boundaries.append(cursor)
+
+    ax = plt.gca()
+    for b in boundaries:
+        ax.axhline(b, color='k', linewidth=0.5)
+        ax.axvline(b, color='k', linewidth=0.5)
+    ax.set_xticks(tick_centers); ax.set_xticklabels(tick_labels, fontsize=8)
+    ax.set_yticks(tick_centers); ax.set_yticklabels(tick_labels, fontsize=8, rotation=0)
+
+    plt.title(f'{method_name} Connectivity Matrix')
+    plt.xlabel('Postsynaptic')
+    plt.ylabel('Presynaptic')
+    plt.tight_layout()
+    save_path = os.path.join(save_dir, f"{method_name.replace(' ', '_').lower()}.pdf")
+    plt.savefig(save_path, format='pdf')
+    plt.close()
+
+
+def plot_v1_v2_matrix(matrix, neuron_names, method_name='GNN', save_dir='results',
+                      vmax=None, vmax_percentile=95):
+    """Plot a V1+V2 two-area connectivity matrix.
+
+    Neurons are grouped area-by-area then population-by-population, so the matrix
+    shows four blocks (V1->V1, V2->V1, V1->V2, V2->V2). Thin lines separate
+    populations; thick lines separate the two areas. ``neuron_names`` are
+    area-qualified labels such as 'V1_23E', 'V2_4I'.
+
+    The color scale is saturated symmetrically at ``vmax`` (if given) or at the
+    ``vmax_percentile`` percentile of the nonzero |magnitudes| — this keeps a few
+    strong edges from dominating the scale so faint edges (e.g. low-rate V1
+    presynaptic connections) stay visible instead of washing out near white.
+    """
+    areas = ['V1', 'V2']
+    pop_order = ['23E', '23I', '4E', '4I', '5E', '5I', '6E', '6I']
+
+    os.makedirs(save_dir, exist_ok=True)
+    cmap = sns.diverging_palette(240, 10, as_cmap=True)
+    if vmax is None:
+        absvals = np.abs(matrix[matrix != 0])
+        cap = np.percentile(absvals, vmax_percentile) if absvals.size else 1e-6
+    else:
+        cap = vmax
+    cap = max(float(cap), 1e-6)
+    # values beyond +/-cap saturate to the endpoint colors
+    norm = TwoSlopeNorm(vmin=-cap, vcenter=0, vmax=cap)
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(matrix,
+                xticklabels=False, yticklabels=False,
+                cmap=cmap, norm=norm,
+                cbar_kws={'label': 'Connection strength'},
+                square=True)
+
+    # Ordered 'AREA_POP' blocks present in the data
+    block_labels = []
+    for area in areas:
+        for pop in pop_order:
+            label = f'{area}_{pop}'
+            if any(name == label for name in neuron_names):
+                block_labels.append(label)
+
+    # Thin population boundaries + tick labels
+    boundaries, tick_centers, tick_labels = [], [], []
+    cursor = 0
+    for label in block_labels:
+        count = sum(1 for name in neuron_names if name == label)
+        boundaries.append(cursor)
+        tick_centers.append(cursor + count / 2)
+        tick_labels.append(label)
+        cursor += count
+    boundaries.append(cursor)
+
+    ax = plt.gca()
+    for b in boundaries:
+        ax.axhline(b, color='k', linewidth=0.4, alpha=0.5)
+        ax.axvline(b, color='k', linewidth=0.4, alpha=0.5)
+
+    # Thick area boundaries
+    cursor = 0
+    for area in areas:
+        a_count = sum(1 for name in neuron_names if name.startswith(area + '_'))
+        if cursor > 0:
+            ax.axhline(cursor, color='k', linewidth=1.8)
+            ax.axvline(cursor, color='k', linewidth=1.8)
+        cursor += a_count
+
+    ax.set_xticks(tick_centers); ax.set_xticklabels(tick_labels, fontsize=6, rotation=90)
+    ax.set_yticks(tick_centers); ax.set_yticklabels(tick_labels, fontsize=6, rotation=0)
+
+    plt.title(f'{method_name} Connectivity Matrix')
+    plt.xlabel('Postsynaptic')
+    plt.ylabel('Presynaptic')
+    plt.tight_layout()
+    save_path = os.path.join(save_dir, f"{method_name.replace(' ', '_').lower()}.pdf")
+    plt.savefig(save_path, format='pdf')
+    plt.close()
+
+
+def plot_edge_magnitude_vs_rate(learned_A, firing_rates, neuron_names=None,
+                                method_name='GNN', save_dir='results'):
+    """Diagnostic: total OUTGOING learned edge magnitude of each neuron vs its
+    firing rate. Confirms (or refutes) the low-rate-presynaptic failure mode — if
+    outgoing magnitude collapses as firing rate drops, the objective is rate-blind
+    and the rate_aware penalty is the right lever.
+
+    learned_A : (N, N) saved connectivity in [pre, post] orientation (rows =
+        presynaptic source), matching run_architectures.extract_adjacency, so a
+        neuron's outgoing magnitude is the row sum of |A|.
+    firing_rates : length-N per-neuron activity (mean spikes/bin).
+    """
+    os.makedirs(save_dir, exist_ok=True)
+    A = np.asarray(learned_A)
+    rates = np.asarray(firing_rates, dtype=float).flatten()
+    out_mag = np.abs(A).sum(axis=1)           # row = presynaptic source
+
+    valid = rates > 0
+    if valid.sum() >= 3 and np.ptp(out_mag[valid]) > 0:
+        rho, _ = spearmanr(rates[valid], out_mag[valid])
+    else:
+        rho = float('nan')
+
+    plt.figure(figsize=(7, 5))
+    plt.scatter(rates, out_mag, s=25, alpha=0.7, edgecolor='k', linewidth=0.3)
+    if neuron_names is not None and len(neuron_names) == len(rates):
+        for x, y, name in zip(rates, out_mag, neuron_names):
+            plt.annotate(str(name), (x, y), fontsize=5, alpha=0.6,
+                         xytext=(2, 2), textcoords='offset points')
+    if valid.all():
+        plt.xscale('log')
+    plt.xlabel('Firing rate (mean spikes / bin)')
+    plt.ylabel('Outgoing learned |edge| magnitude  (sum_post |A[pre, post]|)')
+    plt.title(f'{method_name}: presynaptic edge magnitude vs firing rate\n'
+              f'Spearman rho = {rho:.3f}')
+    plt.tight_layout()
+    save_path = os.path.join(save_dir, f"{method_name.replace(' ', '_').lower()}_mag_vs_rate.pdf")
+    plt.savefig(save_path, format='pdf')
+    plt.close()
+    return save_path

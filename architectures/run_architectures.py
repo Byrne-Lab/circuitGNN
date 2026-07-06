@@ -26,9 +26,11 @@ os.chdir(str(REPO_ROOT))
 
 from circuit_gnn.data import (load_yuto_network, load_pdcm_network, load_pdcm_large_network,
                                load_arbitrary_network,
-                               load_small_circuit_A_network, load_small_circuit_B_network)
+                               load_small_circuit_A_network, load_small_circuit_B_network,
+                               load_mdp_network, load_v1_v2_network)
 from circuit_gnn.train import TrainConfig, train_model, load_checkpoint
-from circuit_gnn.utils import plot_connectivity_matrix, plot_pdcm_matrix
+from circuit_gnn.utils import (plot_connectivity_matrix, plot_pdcm_matrix, plot_mdp_matrix,
+                               plot_v1_v2_matrix, plot_edge_magnitude_vs_rate)
 
 RESULTS_BASE = ARCH_DIR / "results"
 
@@ -57,6 +59,14 @@ ARCHITECTURES = {
     # 3 — multi-step: predict k=4 future bins simultaneously
     "multi_step": {
         "config": {**_BASE_CFG, "model_type": "multi_step", "k_steps": 4},
+        "encoder_kwargs": dict(**_BASE_ENC),
+        "gnn_kwargs": dict(**_BASE_GNN),
+    },
+    # 3b — message normalization: unit-norm each source's message before aggregation
+    # so the edge weight A[i,j] alone carries influence, decoupled from source
+    # activity (restores gradient to low-rate presynaptic edges). Parameter-free.
+    "msg_norm": {
+        "config": {**_BASE_CFG, "model_type": "msg_norm"},
         "encoder_kwargs": dict(**_BASE_ENC),
         "gnn_kwargs": dict(**_BASE_GNN),
     },
@@ -103,10 +113,54 @@ ARCHITECTURES = {
         "encoder_kwargs": dict(**_BASE_ENC, mem_dim=16),
         "gnn_kwargs": dict(**_BASE_GNN),
     },
+    # ENCODER axis — per-neuron memory FiLM-modulates the conv features (gamma,beta)
+    "memory_film": {
+        "config": {**_BASE_CFG, "model_type": "standard", "encoder_type": "memory_film"},
+        "encoder_kwargs": dict(**_BASE_ENC, mem_dim=16),
+        "gnn_kwargs": dict(**_BASE_GNN),
+    },
+    # ENCODER axis — memory_film with tanh-bounded scale: (1+gamma) in (0,2), stable
+    "memory_film_bounded": {
+        "config": {**_BASE_CFG, "model_type": "standard", "encoder_type": "memory_film_bounded"},
+        "encoder_kwargs": dict(**_BASE_ENC, mem_dim=16),
+        "gnn_kwargs": dict(**_BASE_GNN),
+    },
+    # ENCODER axis — bounded FiLM modulation + concatenated memory (slot + film)
+    "memory_hybrid": {
+        "config": {**_BASE_CFG, "model_type": "standard", "encoder_type": "memory_hybrid"},
+        "encoder_kwargs": dict(**_BASE_ENC, mem_dim=16),
+        "gnn_kwargs": dict(**_BASE_GNN),
+    },
+    # ENCODER axis — GRU over the window time axis, seeded by per-neuron memory
+    # (dynamic recurrent state instead of a static prior)
+    "memory_recurrent": {
+        "config": {**_BASE_CFG, "model_type": "standard", "encoder_type": "memory_recurrent"},
+        "encoder_kwargs": dict(**_BASE_ENC, mem_dim=16, gru_hidden=64, gru_layers=1),
+        "gnn_kwargs": dict(**_BASE_GNN),
+    },
     # 6 — interpretability probe: trains exactly like baseline; adds Jacobian /
     # mono-vs-polysynaptic effective-connectivity probes (see models.py banner)
     "interpretable": {
         "config": {**_BASE_CFG, "model_type": "interpretable"},
+        "encoder_kwargs": dict(**_BASE_ENC),
+        "gnn_kwargs": dict(**_BASE_GNN),
+    },
+    # 7 — regularization axis: L1 sparsity penalty weighted per presynaptic neuron
+    # by inverse firing rate, so edges out of low-rate sources are shrunk less
+    # (targets the low-firing-presynaptic miss, e.g. V1 in v1_v2). firing_rates are
+    # computed from the data in train_model; gnn_kwargs may set rate_eps/weight_clip.
+    "rate_aware": {
+        "config": {**_BASE_CFG, "model_type": "rate_aware"},
+        "encoder_kwargs": dict(**_BASE_ENC),
+        "gnn_kwargs": dict(**_BASE_GNN),
+    },
+    # ENCODER axis — rate normalization: standardize each neuron's window by its own
+    # baseline rate before the conv, so a rare source's spike is as salient as a
+    # frequent one and gradient flows onto its outgoing edges (the "inject signal"
+    # complement to rate_aware). Baseline GNN + uniform penalty, so it isolates the
+    # encoder effect. firing_rates are computed from the data in train_model.
+    "rate_norm": {
+        "config": {**_BASE_CFG, "model_type": "standard", "encoder_type": "rate_norm"},
         "encoder_kwargs": dict(**_BASE_ENC),
         "gnn_kwargs": dict(**_BASE_GNN),
     },
@@ -132,6 +186,22 @@ DATASET_REGISTRY = {
     },
     "pdcm_large": {
         "loader": load_pdcm_large_network,
+        "loader_kwargs": {"downsample_factor": "auto"},
+        "num_epochs": 50,
+        "default_window": 100,
+        "l1_lambda": 1.0,
+        "competitive_lambda": 15.0,
+    },
+    "mdp": {
+        "loader": load_mdp_network,
+        "loader_kwargs": {"downsample_factor": "auto"},
+        "num_epochs": 50,
+        "default_window": 100,
+        "l1_lambda": 1.0,
+        "competitive_lambda": 15.0,
+    },
+    "v1_v2": {
+        "loader": load_v1_v2_network,
         "loader_kwargs": {"downsample_factor": "auto"},
         "num_epochs": 50,
         "default_window": 100,
@@ -265,8 +335,18 @@ def run_dataset_architecture(
         val_loader = result["val_loader"]
         learned_A = extract_adjacency(gnn, encoder, val_loader, device)
         np.save(output_dir / f"gnn_{run_idx}.npy", learned_A)
+
+        # diagnostic: outgoing edge magnitude vs firing rate (confirms/refutes the
+        # low-rate-presynaptic failure mode). learned_A is [pre, post].
+        firing_rates = spike_tensor.mean(dim=1).cpu().numpy()
+        plot_edge_magnitude_vs_rate(learned_A, firing_rates, neuron_names=neuron_names,
+                                    method_name=f"GNN {run_idx}", save_dir=str(output_dir))
         if dataset_name in ('pdcm', 'pdcm_large'):
             plot_pdcm_matrix(learned_A, pop_labels, method_name=f"GNN {run_idx}", save_dir=str(output_dir))
+        elif dataset_name == 'mdp':
+            plot_mdp_matrix(learned_A, neuron_names, method_name=f"GNN {run_idx}", save_dir=str(output_dir))
+        elif dataset_name == 'v1_v2':
+            plot_v1_v2_matrix(learned_A, neuron_names, method_name=f"GNN {run_idx}", save_dir=str(output_dir))
         else:
             plot_connectivity_matrix(learned_A, neuron_names=neuron_names,
                                      method_name=f"GNN {run_idx}", save_dir=str(output_dir))
