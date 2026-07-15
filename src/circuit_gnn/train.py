@@ -16,7 +16,7 @@ class TrainConfig:
     batch_size: int = 16
     num_epochs: int = 20
     lr: float = 1e-4
-    l1_lambda: float = 7.5
+    log_sum_penalty_lambda: float = 2.0
     competitive_lambda: float = 15.0
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     seed: int = 0
@@ -68,11 +68,15 @@ def build_models(
     encoder_kwargs: Optional[Dict[str, Any]] = None,
     gnn_kwargs: Optional[Dict[str, Any]] = None,
     device: str = "cpu",
+    firing_rates: Optional[torch.Tensor] = None,
 ) -> Tuple[SpikeEncoder, GraphNeuralNetwork]:
     encoder_kwargs = encoder_kwargs or {}
     gnn_kwargs = gnn_kwargs or {}
 
-    encoder = SpikeEncoder(window_size=window_size, **encoder_kwargs).to(device)
+    # the encoder needs num_neurons (per-neuron memory + rate stats) and firing_rates
+    # (per-neuron baseline for the rate normalization); firing_rates=None -> identity.
+    encoder = SpikeEncoder(window_size=window_size, num_neurons=num_neurons,
+                           firing_rates=firing_rates, **encoder_kwargs).to(device)
     gnn = GraphNeuralNetwork(num_neurons=num_neurons, **gnn_kwargs).to(device)
 
     return encoder, gnn
@@ -82,7 +86,7 @@ def compute_loss(
     predictions: torch.Tensor,
     targets: torch.Tensor,
     criterion: nn.Module,
-    l1_lambda: float = 7.5,
+    log_sum_penalty_lambda: float = 2.0,
     competitive_lambda: float = 15.0,
     model: Optional[nn.Module] = None,
 ) -> torch.Tensor:
@@ -91,10 +95,10 @@ def compute_loss(
 
         penalty_norm = float(model.learned_adj_exc.shape[0]) # divide by N for a per-neuron budget
 
-        l1_adj = l1_lambda / penalty_norm * (torch.log(1 + torch.abs(model.learned_adj_exc)).sum() + torch.log(1 + torch.abs(model.learned_adj_inh)).sum())
+        log_sum_penalty_adj = log_sum_penalty_lambda / penalty_norm * (torch.log(1 + torch.abs(model.learned_adj_exc)).sum() + torch.log(1 + torch.abs(model.learned_adj_inh)).sum())
         competitive_penalty = competitive_lambda / penalty_norm * (torch.relu(model.learned_adj_exc) * torch.relu(model.learned_adj_inh)).sum()
         
-        loss = loss + l1_adj + competitive_penalty
+        loss = loss + log_sum_penalty_adj + competitive_penalty
 
     return loss
 
@@ -107,7 +111,7 @@ def train_epoch(
     criterion: nn.Module,
     device: str,
     competitive_lambda: float = 15.0,
-    l1_lambda: float = 7.5,
+    log_sum_penalty_lambda: float = 2.0,
 ) -> float:
     encoder.train()
     gnn.train()
@@ -120,7 +124,7 @@ def train_epoch(
         optimizer.zero_grad()
         embeddings = encoder(inputs)
         outputs = gnn(embeddings)
-        loss = compute_loss(outputs, targets, criterion, l1_lambda, competitive_lambda, model=gnn)
+        loss = compute_loss(outputs, targets, criterion, log_sum_penalty_lambda, competitive_lambda, model=gnn)
         loss.backward()
         optimizer.step()
 
@@ -173,12 +177,18 @@ def train_model(
         config.num_workers,
     )
 
+    # per-neuron mean spikes-per-bin for the encoder's rate normalization. 
+    if not isinstance(spike_data, torch.Tensor):
+        spike_data = torch.tensor(spike_data, dtype=torch.float32)
+    firing_rates = spike_data.float().mean(dim=1)
+
     encoder, gnn = build_models(
         num_neurons=num_neurons,
         window_size=config.window_size,
         encoder_kwargs=encoder_kwargs,
         gnn_kwargs=gnn_kwargs,
         device=device,
+        firing_rates=firing_rates,
     )
 
     if criterion is None:
@@ -201,7 +211,7 @@ def train_model(
             criterion,
             device,
             config.competitive_lambda,
-            config.l1_lambda,
+            config.log_sum_penalty_lambda,
         )
         history["train_loss"].append(train_loss)
 

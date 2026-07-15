@@ -24,11 +24,11 @@ os.chdir(str(REPO_ROOT))
 from circuit_gnn.data import (load_yuto_network, load_pdcm_network, load_pdcm_large_network,
                               load_arbitrary_network,
                               load_small_circuit_A_network, load_small_circuit_B_network,
-                              load_mdp_network, load_v1_v2_network, load_hc3_session)
-from circuit_gnn.utils import (calculate_fit, align_matrices,
+                              load_mdp_network, load_v1_v2_network)
+from circuit_gnn.utils import (calculate_fit, align_matrices, robust_sign_inference,
                                 get_consistent_connections, get_top_k, sign_inference,
                                 plot_connectivity_matrix, plot_pdcm_matrix,
-                                plot_mdp_matrix, plot_v1_v2_matrix, plot_hc3_matrix,
+                                plot_mdp_matrix, plot_v1_v2_matrix,
                                 plot_metric_verification)
 
 RESULTS_BASE = VARIANTS_DIR / "results"
@@ -42,54 +42,13 @@ DATASET_REGISTRY = {
     "v1_v2":           {"loader": load_v1_v2_network,           "loader_kwargs": {"downsample_factor": 6}},
     "small_circuit_A": {"loader": load_small_circuit_A_network, "loader_kwargs": {"downsample_factor": 20}},
     "small_circuit_B": {"loader": load_small_circuit_B_network, "loader_kwargs": {"downsample_factor": 20}},
-    # in-vivo hc-3 session (no ground truth); same session/window as the baselines
-    "hc3":             {"loader": load_hc3_session,             "loader_kwargs": {"downsample_factor": "auto", "tar_path": "datasets/hc3/ec016.1016.tar.gz", "topdir": "ec016.58", "cell_csv": "datasets/hc3/hc3-cell.csv", "regions": ["CA3", "DG", "EC2", "EC3"], "quality_filter": True, "max_time_s": 2000}},
 }
 
-"""ALL_VARIANTS = [
-    # batch size
-    "batch_4", "batch_16", "batch_32", "batch_64",
-    # GNN layers
-    "layers_1", "layers_3", "layers_5", "layers_7",
-    # bin size
-    "bin_1ms", "bin_2ms", "bin_3ms", "bin_4ms", "bin_5ms", "bin_6ms", "bin_7ms", "bin_8ms", "bin_9ms", "bin_10ms", "bin_20ms",
-    # window size
-    "window_5", "window_10", "window_50", "window_100", "window_200",
-    # encoder channels
-    "channels_8", "channels_16", "channels_32", "channels_64",
-    # encoder kernel size
-    "kernel_size_2", "kernel_size_3", "kernel_size_4",
-    # L1 regularisation
-    "l1_0p5", "l1_1", "l1_1p5", "l1_2", "l1_2p5", "l1_5", "l1_7p5", "l1_10", "l1_15",
-    # competitive lambda
-    "comp_5", "comp_10", "comp_15", "comp_20", "comp_30",
-    # L1 × competitive lambda sweep
-    "l1_1_comp_5", "l1_1_comp_10", "l1_1_comp_15",
-    "l1_1p5_comp_5", "l1_1p5_comp_10", "l1_1p5_comp_15",
-    "l1_2_comp_5", "l1_2_comp_10", "l1_2_comp_15",
-    "l1_2p5_comp_5", "l1_2p5_comp_10", "l1_2p5_comp_15",
-    # self_scale
-    "self_0p1", "self_0p25", "self_0p5", "self_1",
-    # embedding dim
-    "emb_16", "emb_32", "emb_64", "emb_128",
-    # hidden dim
-    "hidden_32", "hidden_64", "hidden_128",
-    # learning rate
-    "lr_1e-5", "lr_5e-5", "lr_1e-4", "lr_5e-4",
-    # kernel size × channels sweep
-    "kernel_2_channels_8", "kernel_2_channels_16", "kernel_2_channels_32", "kernel_2_channels_64",
-    "kernel_3_channels_8", "kernel_3_channels_16", "kernel_3_channels_32", "kernel_3_channels_64",
-    "kernel_4_channels_8", "kernel_4_channels_16", "kernel_4_channels_32", "kernel_4_channels_64",
-    # embedding dim × hidden dim sweep
-    "emb_16_hidden_16", "emb_16_hidden_32", "emb_16_hidden_64", "emb_16_hidden_128",
-    "emb_32_hidden_16", "emb_32_hidden_32", "emb_32_hidden_64", "emb_32_hidden_128",
-    "emb_64_hidden_16", "emb_64_hidden_32", "emb_64_hidden_64", "emb_64_hidden_128",
-    "emb_128_hidden_16", "emb_128_hidden_32", "emb_128_hidden_64", "emb_128_hidden_128",
-]
-"""
 ALL_VARIANTS = [
-    # bin size
-    "bin_1ms", "bin_2ms", "bin_3ms", "bin_4ms", "bin_5ms", "bin_6ms", "bin_7ms", "bin_8ms", "bin_9ms", "bin_10ms", "bin_20ms",
+    # eps sweep — rate-norm Poisson floor (mem_dim fixed at 16); eps_1e-3 == mem_16
+    "eps_1e-4", "eps_1e-3", "eps_1e-2", "eps_1e-1",
+    # mem_dim sweep — per-neuron memory width (eps fixed at 1e-3)
+    "mem_4", "mem_8", "mem_16", "mem_32",
 ]
 
 
@@ -97,9 +56,15 @@ def load_variant_results(
     dataset: str,
     variant: str,
     ablation_threshold: float = 0.20,
-    excitatory: bool = True,
+    bias: str = None,
+    gdi_sign=None,
 ):
-    """Load and align adjacency matrices for a single variant, filtering by ablation test."""
+    """Load and align adjacency matrices for a single variant, filtering by ablation test.
+
+    bias=None uses the consensus + sign-inference orientation; pass a precomputed
+    gdi_sign (same for every variant of a dataset) so robust_sign_inference runs once.
+    bias='excitatory'/'inhibitory' reverts to the legacy dominance-assumption method.
+    """
     variant_dir = RESULTS_BASE / dataset / variant
     csv_path = variant_dir / "ablation.csv"
 
@@ -119,7 +84,7 @@ def load_variant_results(
     if not matrices:
         return None, None, 0, total
 
-    matrices = align_matrices(matrices, excitatory=excitatory)
+    matrices = align_matrices(matrices, bias=bias, gdi_sign=gdi_sign)
     stacked = np.stack(matrices)
     mean_A = np.round(stacked.mean(axis=0), 3)
     consistency_mask = get_consistent_connections(stacked, threshold=0.8)
@@ -134,13 +99,19 @@ def main():
                         help="Variants to compare (default: all)")
     parser.add_argument("--ablation_threshold", type=float, default=0.20,
                         help="Min |difference| to keep a run (default: 0.20)")
-    parser.add_argument("--excitatory", action="store_true", default=True,
-                        help="Assume excitatory connections dominate for sign alignment")
+    parser.add_argument("--bias", default=None, choices=["excitatory", "inhibitory"],
+                        help="Legacy sign method assuming excitatory/inhibitory dominance. "
+                             "Omit for the new consensus + sign-inference orientation.")
     args = parser.parse_args()
 
-    # Load ground truth (plots suppressed by Agg backend)
+    # Load ground truth (plots suppressed by Agg backend); binned_spikes feeds the
+    # consensus sign-inference orientation.
     reg = DATASET_REGISTRY[args.dataset]
-    _, true_conn, neuron_names = reg["loader"](**reg["loader_kwargs"])
+    binned_spikes, true_conn, neuron_names = reg["loader"](**reg["loader_kwargs"])
+
+    # gdi_sign depends only on the spikes, not the variant -> compute once and reuse
+    # across every variant (skips re-running robust_sign_inference per variant).
+    gdi_sign = None if args.bias is not None else robust_sign_inference(binned_spikes)
 
     if args.dataset in ("pdcm", "pdcm_large"):
         pop_labels = np.load(f"datasets/{args.dataset}/pop_labels.npy")
@@ -152,9 +123,6 @@ def main():
     elif args.dataset == "v1_v2":
         def do_plot(matrix, method_name, save_dir):
             plot_v1_v2_matrix(matrix, neuron_names, method_name=method_name, save_dir=save_dir)
-    elif args.dataset == "hc3":
-        def do_plot(matrix, method_name, save_dir):
-            plot_hc3_matrix(matrix, neuron_names, method_name=method_name, save_dir=save_dir)
     else:
         def do_plot(matrix, method_name, save_dir):
             plot_connectivity_matrix(matrix, neuron_names=neuron_names, method_name=method_name, save_dir=save_dir, plot_val=True)
@@ -162,7 +130,7 @@ def main():
     rows = []
     for variant in args.variants:
         mean_A, consistent_mean_A, n_passed, n_total = load_variant_results(
-            args.dataset, variant, args.ablation_threshold, args.excitatory
+            args.dataset, variant, args.ablation_threshold, args.bias, gdi_sign
         )
 
         if mean_A is None:

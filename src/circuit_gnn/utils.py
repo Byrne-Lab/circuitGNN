@@ -589,7 +589,27 @@ def plot_metric_verification(true_conn, learned_conn, save_dir, method_name="con
     return save_path
 
 
-def align_matrices(adjacency_matrices, excitatory=True):
+def align_matrices(adjacency_matrices, bias=None, binned_spikes=None, gdi_sign=None, num_taus=3, ridge=1e-3):
+    if bias in ("excitatory", "inhibitory"):
+        return _align_matrices_legacy(adjacency_matrices, excitatory=(bias == "excitatory"))
+    if bias is not None:
+        raise ValueError(f"bias must be 'excitatory', 'inhibitory', or None; got {bias!r}")
+    # Pass a precomputed gdi_sign to skip robust_sign_inference (expensive) when
+    # aligning many run-sets that share the same spikes, e.g. a variant sweep.
+    if gdi_sign is None:
+        if binned_spikes is None:
+            raise ValueError(
+                "consensus alignment (bias=None) needs binned_spikes or a precomputed "
+                "gdi_sign; pass bias='excitatory'/'inhibitory' to use the legacy method."
+            )
+        gdi_sign = robust_sign_inference(binned_spikes, num_taus, ridge=ridge)
+    aligned, _ = consensus_flips(adjacency_matrices, gdi_sign)
+    return aligned
+
+
+def _align_matrices_legacy(adjacency_matrices, excitatory=True):
+    """Legacy sign alignment: flip each run toward a reference matrix, orienting the
+    whole cluster by assuming excitatory (or inhibitory) connections dominate."""
     excitation = 1 if np.sum(adjacency_matrices[0]) >= 0 else 0
     if (excitatory and not excitation) or (not excitatory and excitation):
         adjacency_matrices[0] = -adjacency_matrices[0]
@@ -603,6 +623,86 @@ def align_matrices(adjacency_matrices, excitatory=True):
         if cos_sim_rev > cos_sim_reg:
             adjacency_matrices[i] = -current_matrix
     return adjacency_matrices
+
+
+def robust_sign_inference(binned_spikes, num_taus=3, ridge=1e-3):
+    # GDI sign per edge (partial-correlation sign at best lag), robust on large N.
+    # Silent (zero-variance) neurons are dropped (their edges stay sign 0)
+    # Ridge keeps the correlation invertible even when it is singular/collinear 
+
+    def _partial_corr(X):
+        corr = np.nan_to_num(np.corrcoef(X.T), nan=0.0)
+        np.fill_diagonal(corr, 1.0)
+        prec = np.linalg.inv(corr + ridge * np.eye(corr.shape[0]))
+        d = np.diag(prec)
+        return -prec / np.sqrt(np.outer(d, d))
+
+    N = binned_spikes.shape[0]
+    active = np.where(binned_spikes.std(axis=1) > 0)[0]
+    gdi = np.zeros((N, N))
+    if len(active) < N:
+        print(f"sign inference: dropped {N - len(active)} silent neurons, "
+              f"{len(active)} active (ridge={ridge}).")
+    if len(active) < 2:
+        return gdi
+
+    X = binned_spikes[active].T
+    C = X.shape[1]
+    sign = np.zeros((C, C))
+    for j in range(C):
+        pcorr = np.zeros((C, num_taus))
+        for tt in range(num_taus):
+            Xs = X.copy()
+            Xs[:-(tt + 1), j] = Xs[tt + 1:, j]
+            pcorr[:, tt] = _partial_corr(Xs[:-(tt + 1), :])[:, j]
+        best = pcorr[np.arange(C), np.argmax(np.abs(pcorr), axis=1)]  # value at max-|lag|
+        sign[:, j] = np.sign(best)
+    gdi[np.ix_(active, active)] = sign
+    return gdi
+
+
+def _cosine_offdiag(a, b):
+    # Off-diagonal cosine similarity
+    v1, v2 = a[~np.eye(a.shape[0], dtype=bool)], b[~np.eye(b.shape[0], dtype=bool)]
+    denom = np.linalg.norm(v1) * np.linalg.norm(v2)
+    return float(np.dot(v1, v2) / denom) if denom > 0 else 0.0
+
+
+def consensus_flips(matrices, gdi_sign, max_iter=100):
+    # Fix each run's arbitrary global sign, then orient the whole cluster.
+
+    mats = [A.copy() for A in matrices]
+    n = len(mats)
+    flip = [False] * n
+
+    total = np.stack(mats).sum(axis=0)
+    for _ in range(max_iter):
+        changed = False
+        for i in range(n):
+            loo = (total - mats[i]) / max(n - 1, 1)  # mean of the other runs
+            if _cosine_offdiag(-mats[i], loo) > _cosine_offdiag(mats[i], loo):
+                total = total - 2 * mats[i]
+                mats[i] = -mats[i]
+                flip[i] = not flip[i]
+                changed = True
+        if not changed:
+            break
+
+    # global orientation
+    mean = np.stack(mats).mean(axis=0)
+    off = ~np.eye(mean.shape[0], dtype=bool)
+    cur, ref = np.sign(mean[off]), gdi_sign[off]
+    usable = (cur != 0) & (ref != 0)
+    if usable.sum() == 0:
+        flip_all = mean.sum() < 0  # excitatory-dominant fallback
+        print("Warning: gdi_sign gave no usable orientation edges; using excitatory fallback.")
+    else:
+        agree = np.sum(cur[usable] == ref[usable])
+        flip_all = agree < usable.sum() - agree
+    if flip_all:
+        mats = [-A for A in mats]
+        flip = [not f for f in flip]
+    return mats, flip
 
 
 def scale_ablation(A, ablation_matrix):

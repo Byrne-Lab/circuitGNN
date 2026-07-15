@@ -28,7 +28,7 @@ def load_arbitrary_network(downsample_factor = 'auto', gap=-1, step=-1):
     Parameters
     ----------
     downsample_factor : int or 'auto'
-        If 'auto' (default), the bin is chosen by occupancy (see
+        If 'auto' (default), the bin is chosen by signed-edge stability (see
         circuit_gnn.optimal_bin_size); otherwise used as below.
         Bin size in ms (e.g. 10 -> 10 ms bins). Native resolution is 1 ms.
     gap : ignored
@@ -80,7 +80,7 @@ def load_arbitrary_network(downsample_factor = 'auto', gap=-1, step=-1):
             sp = sp[mask]
             binned_spikes[i, sp] = 1
 
-    # downsample (native resolution is 1 ms; resolve 'auto' via occupancy)
+    # downsample (native resolution is 1 ms; resolve 'auto' via signed-edge stability)
     downsample_factor = resolve_downsample(downsample_factor, binned_spikes, 1.0)
     binned_spikes = binned_spikes[:, :binned_spikes.shape[1] // downsample_factor * downsample_factor]
     binned_spikes = binned_spikes.reshape(binned_spikes.shape[0], -1, downsample_factor).sum(2)
@@ -148,7 +148,7 @@ def load_yuto_network(downsample_factor = 'auto', gap=0.20, step=1):
     Parameters
     ----------
     downsample_factor : int or 'auto'
-        If 'auto' (default), the bin is chosen by occupancy (see
+        If 'auto' (default), the bin is chosen by signed-edge stability (see
         circuit_gnn.optimal_bin_size); otherwise used as below.
         Bin size in ms (e.g. 20 -> 10 ms bins, 10 -> 5 ms bins).
         Native resolution is 0.5 ms.
@@ -224,7 +224,7 @@ def load_yuto_network(downsample_factor = 'auto', gap=0.20, step=1):
 
     print(binned_spikes.shape)
 
-    # downsample (native resolution is 0.5 ms; resolve 'auto' via occupancy)
+    # downsample (native resolution is 0.5 ms; resolve 'auto' via signed-edge stability)
     downsample_factor = resolve_downsample(downsample_factor, binned_spikes, 0.5)
     binned_spikes = binned_spikes[:, :binned_spikes.shape[1] // downsample_factor * downsample_factor]
     binned_spikes = binned_spikes.reshape(binned_spikes.shape[0], -1, downsample_factor).sum(2)
@@ -259,7 +259,7 @@ def load_small_circuit_A_network(downsample_factor = 'auto', gap=0.20, step=1):
     Parameters
     ----------
     downsample_factor : int or 'auto'
-        If 'auto' (default), the bin is chosen by occupancy (see
+        If 'auto' (default), the bin is chosen by signed-edge stability (see
         circuit_gnn.optimal_bin_size); otherwise used as below.
         Bin size in ms (e.g. 20 -> 10 ms bins, 10 -> 5 ms bins).
         Native resolution is 0.5 ms.
@@ -326,7 +326,7 @@ def load_small_circuit_A_network(downsample_factor = 'auto', gap=0.20, step=1):
 
     print(binned_spikes.shape)
 
-    # downsample (native resolution is 0.5 ms; resolve 'auto' via occupancy)
+    # downsample (native resolution is 0.5 ms; resolve 'auto' via signed-edge stability)
     downsample_factor = resolve_downsample(downsample_factor, binned_spikes, 0.5)
     binned_spikes = binned_spikes[:, :binned_spikes.shape[1] // downsample_factor * downsample_factor]
     binned_spikes = binned_spikes.reshape(binned_spikes.shape[0], -1, downsample_factor).sum(2)
@@ -361,7 +361,7 @@ def load_small_circuit_B_network(downsample_factor = 'auto', gap=0.20, step=1):
     Parameters
     ----------
     downsample_factor : int or 'auto'
-        If 'auto' (default), the bin is chosen by occupancy (see
+        If 'auto' (default), the bin is chosen by signed-edge stability (see
         circuit_gnn.optimal_bin_size); otherwise used as below.
         Bin size in ms (e.g. 20 -> 10 ms bins, 10 -> 5 ms bins).
         Native resolution is 0.5 ms.
@@ -429,7 +429,7 @@ def load_small_circuit_B_network(downsample_factor = 'auto', gap=0.20, step=1):
 
     print(binned_spikes.shape)
 
-    # downsample (native resolution is 0.5 ms; resolve 'auto' via occupancy)
+    # downsample (native resolution is 0.5 ms; resolve 'auto' via signed-edge stability)
     downsample_factor = resolve_downsample(downsample_factor, binned_spikes, 0.5)
     binned_spikes = binned_spikes[:, :binned_spikes.shape[1] // downsample_factor * downsample_factor]
     binned_spikes = binned_spikes.reshape(binned_spikes.shape[0], -1, downsample_factor).sum(2)
@@ -464,7 +464,7 @@ def load_pdcm_network(downsample_factor='auto', gap=0, step=0):
     Parameters
     ----------
     downsample_factor : int or 'auto'
-        If 'auto' (default), the bin is chosen by occupancy (see
+        If 'auto' (default), the bin is chosen by signed-edge stability (see
         circuit_gnn.optimal_bin_size); otherwise used as below.
         Bin size in ms (e.g. 10 -> 10 ms bins)
     gap : ignored
@@ -568,6 +568,109 @@ def load_pdcm_network(downsample_factor='auto', gap=0, step=0):
     return binned_spikes, true_conn, neuron_names
 
 
+def load_allen_network(downsample_factor='auto', gap=0, step=0,
+                       max_time_s=None, data_dir='datasets/allen'):
+    """
+    Load the Allen Visual-Coding Neuropixels hippocampal dataset used by
+    Medvedeva et al. 2025 (session 715093703, probe 810755803, regions
+    CA1/CA3/DG). Built by datasets/allen/prepare_allen.py and stored in the same
+    .npy layout as the simulated datasets (spkt/spkid/pop_labels/sim_duration_ms),
+    with spike times in ms.
+
+    Like the hc-3 recordings this is in-vivo data, so there is NO ground-truth
+    connectivity: ``true_conn`` is an all-zeros placeholder. Region identity is
+    encoded in ``neuron_names`` ('<region>_u<unit_id>'), ordered CA1->CA3->DG so
+    the raster and learned matrix are block-structured.
+
+    Parameters
+    ----------
+    downsample_factor : int or 'auto'
+        Bin size in ms, or 'auto' to pick it by signed-edge stability (see
+        circuit_gnn.optimal_bin_size). NB: 'auto' builds a 1 ms native array over
+        the whole ~2.68 h recording (~3 GB for 92 neurons); pass an explicit bin
+        (or max_time_s) to avoid that.
+    gap, step : ignored
+        Kept for API compatibility with the other loaders.
+    max_time_s : float or None
+        If set, keep only spikes in the first ``max_time_s`` seconds. The full
+        recording is ~2.68 h; the paper also fits on 500 s / 1000 s subsets.
+    data_dir : str
+        Directory holding the .npy files (default 'datasets/allen').
+
+    Returns
+    -------
+    binned_spikes : ndarray (n_neurons, n_timebins) of int
+        Spike counts per bin.
+    true_conn : ndarray (n_neurons, n_neurons)
+        All-zeros placeholder (no ground truth for in-vivo data).
+    neuron_names : list of str
+        '<region>_u<unit_id>' per neuron, ordered by region.
+    """
+    spkt       = np.load(f'{data_dir}/spkt.npy')          # ms
+    spkid      = np.load(f'{data_dir}/spkid.npy')
+    pop_labels = np.load(f'{data_dir}/pop_labels.npy')
+    sim_dur_ms = np.load(f'{data_dir}/sim_duration_ms.npy')[0]
+
+    n_neurons    = len(pop_labels)
+    neuron_names = list(pop_labels)
+    true_conn    = np.zeros((n_neurons, n_neurons))       # in-vivo: no ground truth
+
+    if max_time_s is not None:
+        window_ms = max_time_s * 1000.0
+        keep = spkt < window_ms
+        spkt, spkid = spkt[keep], spkid[keep]
+        sim_dur_ms = min(sim_dur_ms, window_ms)
+
+    print(spkt.shape, spkid.shape)
+
+    # resolve 'auto' from a native 1 ms binning before choosing the final bin
+    if isinstance(downsample_factor, str):
+        native_bins = int(sim_dur_ms // 1)
+        native = np.zeros((n_neurons, native_bins), dtype=np.int32)
+        nt_idx = np.floor(spkt / 1).astype(int)
+        nvalid = (nt_idx >= 0) & (nt_idx < native_bins)
+        np.add.at(native, (spkid.astype(int)[nvalid], nt_idx[nvalid]), 1)
+        downsample_factor = resolve_downsample(downsample_factor, native, 1.0)
+
+    n_bins = int(sim_dur_ms // downsample_factor)
+    binned_spikes = np.zeros((n_neurons, n_bins), dtype=np.int32)
+    t_idx = np.floor(spkt / downsample_factor).astype(int)
+    valid = (t_idx >= 0) & (t_idx < n_bins)
+    np.add.at(binned_spikes, (spkid.astype(int)[valid], t_idx[valid]), 1)
+
+    print(f"Loaded Allen hippocampal network: {n_neurons} neurons, "
+          f"{sim_dur_ms:.0f} ms recording")
+    print(f"Binned spikes shape: {binned_spikes.shape}  "
+          f"(bin size = {downsample_factor} ms)")
+    print("Units per region: "
+          f"{pd.Series([n.split('_')[0] for n in neuron_names]).value_counts().to_dict()}")
+
+    # Region-blocked spike raster.
+    spike_times_s = [np.where(binned_spikes[i] > 0)[0] * downsample_factor / 1000
+                     for i in range(n_neurons)]
+    plt.figure(figsize=(10, 5))
+    plt.eventplot(spike_times_s, orientation='horizontal', linelengths=0.8, color='black')
+    regions = [n.split('_')[0] for n in neuron_names]
+    ax = plt.gca()
+    i = 0
+    while i < len(regions):
+        j = i
+        while j < len(regions) and regions[j] == regions[i]:
+            j += 1
+        ax.axhline(j - 0.5, color='red', linewidth=0.5)
+        ax.text(-0.01, (i + j - 1) / 2, regions[i], ha='right', va='center',
+                fontsize=8, transform=ax.get_yaxis_transform())
+        i = j
+    plt.xlabel('Time (s)')
+    plt.ylabel('Neuron Index')
+    plt.title('Allen hippocampal spike raster (CA1/CA3/DG)')
+    plt.tight_layout()
+    plt.savefig(f'{data_dir}/raster_plot.pdf', format='pdf')
+    plt.close()
+
+    return binned_spikes, true_conn, neuron_names
+
+
 def load_mdp_network(downsample_factor='auto', gap=0, step=0):
     """
     Load the multi-area-model mdp simulation dataset.
@@ -575,7 +678,7 @@ def load_mdp_network(downsample_factor='auto', gap=0, step=0):
     Parameters
     ----------
     downsample_factor : int or 'auto'
-        If 'auto' (default), the bin is chosen by occupancy (see
+        If 'auto' (default), the bin is chosen by signed-edge stability (see
         circuit_gnn.optimal_bin_size); otherwise used as below.
         Bin size in ms (e.g. 10 -> 10 ms bins).
     gap : ignored
@@ -736,7 +839,7 @@ def load_pdcm_large_network(downsample_factor='auto', gap=0, step=0):
     Parameters
     ----------
     downsample_factor : int or 'auto'
-        If 'auto' (default), the bin is chosen by occupancy (see
+        If 'auto' (default), the bin is chosen by signed-edge stability (see
         circuit_gnn.optimal_bin_size); otherwise used as below.
         Bin size in ms (e.g. 10 -> 10 ms bins)
     gap : ignored
@@ -852,7 +955,7 @@ def load_v1_v2_network(downsample_factor='auto', gap=0, step=0):
     Parameters
     ----------
     downsample_factor : int or 'auto'
-        If 'auto' (default), the bin is chosen by occupancy (see
+        If 'auto' (default), the bin is chosen by signed-edge stability (see
         circuit_gnn.optimal_bin_size); otherwise used as below.
         Bin size in ms (e.g. 10 -> 10 ms bins).
     gap : ignored
@@ -1027,7 +1130,178 @@ def load_v1_v2_network(downsample_factor='auto', gap=0, step=0):
     return binned_spikes, true_conn, neuron_names
 
 
+# ---------------------------------------------------------------------------
+# CRCNS hc-3 loaders. One engine (_load_hc3) backs all of them: a single session
+# is just the one-element case of the multi-session aggregator, so tar-reading,
+# metadata, binning and the raster live in exactly one place.
+# ---------------------------------------------------------------------------
 
+# hc3-cell.csv is headerless; column order is fixed by hc3-tables.sql.
+_HC3_CELL_COLS = ['id', 'topdir', 'animal', 'ele', 'clu', 'region',
+                  'nexciting', 'ninhibiting', 'exciting', 'inhibiting',
+                  'excited', 'inhibited', 'fireRate', 'totalFireRate',
+                  'cellType', 'eDist', 'RefracRatio', 'RefracViol']
+
+
+def _hc3_cell_neurons(cell_csv, topdir, regions=None, quality_filter=True):
+    """Ordered (ele, clu, region, cellType) list for a topdir from hc3-cell.csv,
+    sorted region->type->ele->clu so rasters / matrices are block-structured."""
+    meta = pd.read_csv(cell_csv, header=None, names=_HC3_CELL_COLS)
+    meta = meta[meta['topdir'] == topdir]
+    if regions is not None:
+        meta = meta[meta['region'].isin(regions)]
+    if quality_filter:
+        meta = meta[(meta['eDist'] > 14) & (meta['RefracRatio'] < 0.2) & (meta['RefracViol'] < 0.01)]
+    meta = meta.sort_values(['region', 'cellType', 'ele', 'clu'])
+    return [(int(e), int(c), str(r), str(ct)) for e, c, r, ct in
+            meta[['ele', 'clu', 'region', 'cellType']].itertuples(index=False, name=None)]
+
+
+def _bin_hc3(samples, fs, duration_s, downsample_factor):
+    """Bin a list of per-neuron spike-sample arrays -> (binned_spikes, bin_ms).
+    'auto' picks the bin by signed-edge stability on a native 1 ms grid (as the
+    pdcm/mdp loaders do); an int is used directly as the bin width in ms."""
+    n = len(samples)
+    samples_per_ms = fs / 1000.0
+    dur_ms = duration_s * 1000.0
+    last_sample = max((s.max() for s in samples if s.size), default=0.0)
+    if isinstance(downsample_factor, str):
+        n_native = max(int(np.ceil(dur_ms)), int(last_sample // samples_per_ms) + 1)
+        native = np.zeros((n, n_native), dtype=np.int32)   # sizable on long sessions; freed below
+        for i, s in enumerate(samples):
+            if s.size:
+                np.add.at(native[i], np.floor(s / samples_per_ms).astype(np.int64), 1)
+        bin_ms = int(resolve_downsample(downsample_factor, native, 1.0))
+        del native
+    else:
+        bin_ms = int(downsample_factor)
+    step = samples_per_ms * bin_ms
+    n_bins = max(int(np.ceil(dur_ms / bin_ms)), int(last_sample // step) + 1)
+    binned = np.zeros((n, n_bins), dtype=np.int32)
+    for i, s in enumerate(samples):
+        if s.size:
+            np.add.at(binned[i], np.floor(s / step).astype(np.int64), 1)
+    return binned, bin_ms
+
+
+def _save_hc3_raster(binned_spikes, neuron_names, tag, bin_ms, data_dir='datasets/hc3'):
+    """Spike raster in the same style as the other loaders; per-tag filename so
+    loaders / stages don't clobber each other's PDF."""
+    os.makedirs(data_dir, exist_ok=True)
+    bin_s = bin_ms / 1000.0
+    n = len(neuron_names)
+    spike_times = [np.where(binned_spikes[i] > 0)[0] * bin_s for i in range(n)]
+    plt.figure(figsize=(10, 5))
+    plt.eventplot(spike_times, orientation='horizontal', linelengths=0.8, color='black')
+    plt.yticks(range(n), neuron_names, fontsize=5)
+    plt.gca().invert_yaxis()
+    plt.xlabel('Time (s)'); plt.ylabel('Neuron'); plt.title(f'Spike Raster ({tag})')
+    plt.tight_layout()
+    plt.savefig(f'{data_dir}/raster_{tag}.pdf', format='pdf')
+    plt.close()
+
+
+def _load_hc3(session_tars, durations, cell_csv=None, topdir=None, regions=None,
+              quality_filter=True, downsample_factor='auto', min_rate_hz=0.0,
+              max_time_s=None, keep_silent=False, tag=None, data_dir='datasets/hc3'):
+    """Load one or more hc-3 sessions -> (binned_spikes, true_conn(zeros), neuron_names).
+
+    session_tars : list of .tar.gz paths (len 1 == single session). Only .res/.clu/.xml
+        are streamed out; the big .spk/.eeg/.fet members are never read into memory.
+    durations    : seconds per session, aligned to session_tars (None -> estimate from
+        that session's last spike). Several sessions are concatenated end-to-end with a
+        cumulative sample offset, so short blocks pool into one longer train.
+    cell_csv     : hc3-cell.csv. If given, the neuron set is fixed by the cell table
+        (region/quality filtered, sorted) -> identical neurons/order across sessions, so
+        learned-A matrices are comparable element by element. If None, every sorted
+        cluster (>=2) found in the archives is used, labelled 'NA'/'n'.
+    min_rate_hz  : drop neurons below this mean rate (ignored when keep_silent).
+    max_time_s   : keep only the first max_time_s seconds of each session.
+    keep_silent  : keep spikeless neurons as all-zero rows (preserves index alignment
+        across stages); otherwise silent / sub-rate neurons are dropped.
+
+    No ground truth exists for in-vivo data -> true_conn is all zeros; the E/I identity
+    (cellType p/i/n) lives in neuron_names, which is the Kobayashi et al. reference.
+    """
+    reads = [_read_hc3_res_clu(t) for t in session_tars]
+    fs = reads[0][2]
+
+    if cell_csv is not None:
+        neurons = _hc3_cell_neurons(cell_csv, topdir, regions, quality_filter)
+        if not neurons:
+            raise RuntimeError(f'No neurons for topdir {topdir!r} after region/quality filter.')
+    else:
+        if regions is not None or quality_filter:
+            warnings.warn('regions / quality_filter need cell_csv; ignoring them.')
+        keys = set()
+        for res, clu, _ in reads:
+            for sh, cl in clu.items():
+                if sh in res and len(res[sh]) == len(cl):
+                    keys |= {(sh, int(c)) for c in np.unique(cl) if c >= 2}
+        neurons = [(e, c, 'NA', 'n') for e, c in sorted(keys)]
+        if not neurons:
+            raise FileNotFoundError('No sorted clusters (>=2) found in the archive(s).')
+    n = len(neurons)
+
+    # concatenate each neuron's spikes across sessions, offsetting by elapsed time
+    per_neuron = [[] for _ in range(n)]
+    offset = 0.0
+    total_duration = 0.0
+    for (res, clu, _), dur, tar in zip(reads, durations, session_tars):
+        rows, sess_last = [], 0.0
+        for i, (e, c, r, ct) in enumerate(neurons):
+            if e in res and e in clu and len(res[e]) == len(clu[e]):
+                s = res[e][clu[e] == c]
+                if max_time_s is not None:                 # keep only the first max_time_s seconds
+                    s = s[s < max_time_s * fs]
+                if s.size:
+                    rows.append((i, s))
+                    sess_last = max(sess_last, float(s.max()))
+        if max_time_s is not None:
+            dur = float(max_time_s)
+        if dur is None:
+            dur = sess_last / fs
+            warnings.warn(f'duration not given for {os.path.basename(tar)}; estimated '
+                          f'{dur:.1f}s from its last spike (inflates rates slightly).')
+        for i, s in rows:
+            per_neuron[i].append(s.astype(np.float64) + offset)
+        offset += dur * fs
+        total_duration += dur
+    samples = [np.concatenate(p) if p else np.empty(0) for p in per_neuron]
+
+    # rate / silence filter (silent neurons kept only when alignment is needed)
+    if keep_silent:
+        keep = list(range(n))
+    else:
+        keep = [i for i in range(n)
+                if samples[i].size and samples[i].size / total_duration >= min_rate_hz]
+    if len(keep) != n:
+        print(f'Kept {len(keep)}/{n} neurons (dropped silent / < {min_rate_hz} Hz).')
+    neurons = [neurons[i] for i in keep]
+    samples = [samples[i] for i in keep]
+    n = len(neurons)
+    if n == 0:
+        raise RuntimeError('No neurons left after the rate / silence filter.')
+    neuron_names = [f'{r}_{ct}_e{e}c{c}' for e, c, r, ct in neurons]
+
+    binned_spikes, bin_ms = _bin_hc3(samples, fs, total_duration, downsample_factor)
+
+    if tag is None:
+        tag = os.path.basename(session_tars[0])
+        for suf in ('.tar.gz', '.tgz', '.tar'):
+            if tag.endswith(suf):
+                tag = tag[:-len(suf)]
+                break
+
+    silent = sum(1 for s in samples if s.size == 0)
+    print(f'{tag}: {n} neurons ({silent} silent), {total_duration:.0f}s, '
+          f'fs={fs:.0f} Hz, bin={bin_ms} ms, shape={binned_spikes.shape}')
+    print(f'Units per region: {pd.Series([r for _, _, r, _ in neurons]).value_counts().to_dict()}')
+    warnings.warn('In-vivo data: no ground-truth connectivity. true_conn is all-zeros; use '
+                  'the E/I labels in neuron_names (cellType p/i/n) as the reference, as '
+                  'Kobayashi et al. do.')
+    _save_hc3_raster(binned_spikes, neuron_names, tag, bin_ms, data_dir)
+    return binned_spikes, np.zeros((n, n)), neuron_names
 
 
 def load_hc3_session(downsample_factor='auto', gap=-1, step=-1,
@@ -1056,7 +1330,7 @@ def load_hc3_session(downsample_factor='auto', gap=-1, step=-1,
     Parameters
     ----------
     downsample_factor : int or 'auto'
-        Bin size in ms, or 'auto' to pick it by occupancy via
+        Bin size in ms, or 'auto' to pick it by signed-edge stability via
         circuit_gnn.optimal_bin_size (native resolution here is 1 ms).
     gap, step : ignored
         Kept for API compatibility with the other loaders.
@@ -1099,173 +1373,11 @@ def load_hc3_session(downsample_factor='auto', gap=-1, step=-1,
         '<region>_<cellType>_e<shank>c<cluster>' per neuron, ordered by region
         then type so the raster / matrix are block-structured.
     """
-    session = os.path.basename(tar_path)
-    for suf in ('.tar.gz', '.tgz', '.tar'):
-        if session.endswith(suf):
-            session = session[:-len(suf)]
-            break
-
-    # --- pull only the small files we need straight out of the archive ---
-    res_re = re.compile(r'\.res\.(\d+)$')
-    clu_re = re.compile(r'\.clu\.(\d+)$')
-    res_raw, clu_raw, xml_raw = {}, {}, None
-    with tarfile.open(tar_path, 'r|*') as tf:          # streaming: single pass, no 1.3 GB extract
-        for m in tf:
-            if not m.isfile():
-                continue
-            base = os.path.basename(m.name)
-            if not base.startswith(session):
-                continue
-            mres, mclu = res_re.search(base), clu_re.search(base)
-            if mres:
-                res_raw[int(mres.group(1))] = tf.extractfile(m).read()
-            elif mclu:
-                clu_raw[int(mclu.group(1))] = tf.extractfile(m).read()
-            elif base == f'{session}.xml' or (xml_raw is None and base.endswith('.xml')):
-                xml_raw = tf.extractfile(m).read()
-            # .spk / .eeg / .fet / .whl are skipped -> never read into memory
-
-    if not res_raw:
-        raise FileNotFoundError(f'No .res.N files found in {tar_path}')
-
-    # --- sampling rate from the .xml (.res values are sample indices) ---
-    fs = 20000.0
-    if xml_raw is not None:
-        root = ET.fromstring(xml_raw)
-        node = root.find('.//acquisitionSystem/samplingRate')
-        if node is None:
-            node = root.find('.//samplingRate')     # NB: don't use `a or b`; leaf Elements are falsy
-        if node is not None and node.text:
-            fs = float(node.text)
-    samples_per_ms = fs / 1000.0
-
-    def read_ints(buf):
-        if not buf.strip():
-            return np.empty(0, np.int64)
-        return pd.read_csv(io.BytesIO(buf), header=None).iloc[:, 0].to_numpy(np.int64)
-
-    # --- optional metadata: region / cellType / quality per (ele, clu) ---
-    # The CRCNS hc-3 CSVs are headerless; column order is fixed by hc3-tables.sql.
-    cell_cols = ['id', 'topdir', 'animal', 'ele', 'clu', 'region',
-                 'nexciting', 'ninhibiting', 'exciting', 'inhibiting',
-                 'excited', 'inhibited', 'fireRate', 'totalFireRate',
-                 'cellType', 'eDist', 'RefracRatio', 'RefracViol']
-    meta = None
-    if cell_csv is not None:
-        meta = pd.read_csv(cell_csv, header=None, names=cell_cols)
-        meta = meta[meta['topdir'] == topdir].copy()
-        if regions is not None:
-            meta = meta[meta['region'].isin(regions)]
-        if quality_filter:
-            meta = meta[(meta['eDist'] > 14) &
-                        (meta['RefracRatio'] < 0.2) &
-                        (meta['RefracViol'] < 0.01)]
-    elif regions is not None or quality_filter:
-        warnings.warn('regions / quality_filter need cell_csv; ignoring them.')
-
-    # --- one unit per sorted cluster ---
-    units = []
-    for shank in sorted(res_raw):
-        if shank not in clu_raw:
-            continue
-        res = read_ints(res_raw[shank])
-        clu = read_ints(clu_raw[shank])
-        if clu.size == 0:
-            continue
-        clu = clu[1:]                                 # first line is the cluster count
-        if len(res) != len(clu):
-            warnings.warn(f'shank {shank}: res/clu length mismatch '
-                          f'({len(res)} vs {len(clu)}); skipped')
-            continue
-
-        if meta is not None:
-            wanted = [(int(r.clu), r.region, r.cellType)
-                      for r in meta[meta['ele'] == shank].itertuples()]
-        else:
-            wanted = [(int(c), 'NA', 'n') for c in np.unique(clu) if c >= 2]
-
-        for c, region, ctype in wanted:
-            samples = res[clu == c]
-            if max_time_s is not None:                    # keep only the first max_time_s seconds
-                samples = samples[samples < max_time_s * fs]
-            if samples.size:
-                units.append(dict(region=str(region), ctype=str(ctype),
-                                  ele=shank, clu=c, samples=samples))
-
-    if not units:
-        raise RuntimeError('No units selected. If you passed cell_csv, check '
-                           'topdir / regions / quality filters '
-                           '(or max_time_s if you truncated the session).')
-
-    # truncating the session shortens the window used for rates and binning
-    if max_time_s is not None:
-        duration_s = float(max_time_s)
-
-    # --- duration and firing-rate filter (Kobayashi: 0.5 Hz) ---
-    last_sample = max(u['samples'].max() for u in units)
-    if duration_s is None:
-        duration_s = last_sample / fs
-        warnings.warn(f'duration_s not given; estimated {duration_s:.1f}s from the '
-                      f'last spike. Pass the exact value from the session table '
-                      f'for accurate rates.')
-    for u in units:
-        u['rate'] = u['samples'].size / duration_s
-    kept = [u for u in units if u['rate'] >= min_rate_hz]
-    if len(kept) != len(units):
-        print(f'Dropped {len(units) - len(kept)}/{len(units)} units below {min_rate_hz} Hz.')
-    units = kept
-
-    # --- block-order by region then type ---
-    units.sort(key=lambda u: (u['region'], u['ctype'], u['ele'], u['clu']))
-    neuron_names = [f"{u['region']}_{u['ctype']}_e{u['ele']}c{u['clu']}" for u in units]
-    n = len(units)
-
-    # --- pick bin size ---
-    dur_ms = duration_s * 1000.0
-    if isinstance(downsample_factor, str):
-        # native 1 ms grid, sized to cover the last spike, then let the resolver
-        # choose the factor by occupancy (matches the pdcm/mdp loaders)
-        n_native = max(int(np.ceil(dur_ms)), int(last_sample // samples_per_ms) + 1)
-        native = np.zeros((n, n_native), dtype=np.int32)   # ~n * dur_s * 1000 * 4 bytes; sizable on long sessions
-        for i, u in enumerate(units):
-            np.add.at(native[i], np.floor(u['samples'] / samples_per_ms).astype(np.int64), 1)
-        bin_ms = int(resolve_downsample(downsample_factor, native, 1.0))
-        del native
-    else:
-        bin_ms = int(downsample_factor)
-
-    # --- bin (single path; n_bins covers both the stated duration and the last spike) ---
-    step = samples_per_ms * bin_ms
-    n_bins = max(int(np.ceil(dur_ms / bin_ms)), int(last_sample // step) + 1)
-    binned_spikes = np.zeros((n, n_bins), dtype=np.int32)
-    for i, u in enumerate(units):
-        np.add.at(binned_spikes[i], np.floor(u['samples'] / step).astype(np.int64), 1)
-
-    print(f'{session}: {n} units, {duration_s:.1f}s, fs={fs:.0f} Hz, bin={bin_ms} ms')
-    print(f'Binned spikes shape: {binned_spikes.shape}')
-    print(f'Binned spikes possibilities: {np.unique(binned_spikes)}')
-    print(f'Units per region: {pd.Series([u["region"] for u in units]).value_counts().to_dict()}')
-
-    # --- no ground truth for in-vivo data ---
-    true_conn = np.zeros((n, n))
-    warnings.warn('In-vivo data: no ground-truth connectivity exists. true_conn is an '
-                  "all-zeros placeholder; use the putative E/I labels in neuron_names "
-                  '(cellType p/i/n) as the validation reference, as Kobayashi et al. do.')
-
-    # --- raster, same style as the other loaders ---
-    os.makedirs(data_dir, exist_ok=True)
-    bin_s = bin_ms / 1000.0
-    spike_times = [np.where(binned_spikes[i] > 0)[0] * bin_s for i in range(n)]
-    plt.figure(figsize=(10, 5))
-    plt.eventplot(spike_times, orientation='horizontal', linelengths=0.8, color='black')
-    plt.yticks(range(n), neuron_names, fontsize=5)
-    plt.gca().invert_yaxis()
-    plt.xlabel('Time (s)'); plt.ylabel('Neuron'); plt.title(f'Spike Raster ({session})')
-    plt.tight_layout()
-    plt.savefig(f'{data_dir}/raster_{session}.pdf', format='pdf')   # per-session so the loaders don't clobber each other
-    plt.close()
-
-    return binned_spikes, true_conn, neuron_names
+    return _load_hc3([tar_path], [duration_s],
+                     cell_csv=cell_csv, topdir=topdir, regions=regions,
+                     quality_filter=quality_filter, downsample_factor=downsample_factor,
+                     min_rate_hz=min_rate_hz, max_time_s=max_time_s,
+                     keep_silent=False, data_dir=data_dir)
 
 
 def load_hc3_gor01(downsample_factor='auto', gap=-1, step=-1, **overrides):
@@ -1342,3 +1454,163 @@ def load_hc3_ec014(downsample_factor='auto', gap=-1, step=-1, **overrides):
     )
     params.update(overrides)
     return load_hc3_session(downsample_factor=downsample_factor, gap=gap, step=step, **params)
+
+
+def load_hc3_ec016(downsample_factor='auto', gap=-1, step=-1, **overrides):
+    """CRCNS hc-3 session ec016.1016 / topdir ec016.58 (multi-region).
+
+    The multi-region reference session used across the standard baselines and the
+    variant/architecture sweeps: CA3 + DG + EC2 + EC3 recorded together, capped at
+    the first 2000 s so every method sees the same neuron set and window. Because
+    the neurons span several regions, it is more confounded by unrecorded units
+    than the single-region gor01 session, but it exercises the cross-region case.
+
+    Thin wrapper over load_hc3_session with this session baked in; pass any
+    load_hc3_session kwarg (e.g. regions, max_time_s) via **overrides.
+    """
+    params = dict(
+        tar_path='datasets/hc3/ec016.1016.tar.gz',
+        topdir='ec016.58',
+        cell_csv='datasets/hc3/hc3-cell.csv',
+        regions=['CA3', 'DG', 'EC2', 'EC3'],
+        quality_filter=True,
+        max_time_s=2000,
+    )
+    params.update(overrides)
+    return load_hc3_session(downsample_factor=downsample_factor, gap=gap, step=step, **params)
+
+
+def _read_hc3_res_clu(tar_path):
+    """Stream the .res.N / .clu.N / .xml members out of one hc-3 session tarball.
+
+    Returns (res_by_shank, clu_by_shank, fs). The big .spk/.eeg/.fet members are
+    never read into memory. The .clu count line (first entry) is already dropped,
+    so res_by_shank[N] and clu_by_shank[N] are spike-aligned.
+    """
+    session = os.path.basename(tar_path)
+    for suf in ('.tar.gz', '.tgz', '.tar'):
+        if session.endswith(suf):
+            session = session[:-len(suf)]
+            break
+
+    res_re = re.compile(r'\.res\.(\d+)$')
+    clu_re = re.compile(r'\.clu\.(\d+)$')
+    res_raw, clu_raw, xml_raw = {}, {}, None
+    with tarfile.open(tar_path, 'r|*') as tf:
+        for m in tf:
+            if not m.isfile():
+                continue
+            base = os.path.basename(m.name)
+            if not base.startswith(session):
+                continue
+            mres, mclu = res_re.search(base), clu_re.search(base)
+            if mres:
+                res_raw[int(mres.group(1))] = tf.extractfile(m).read()
+            elif mclu:
+                clu_raw[int(mclu.group(1))] = tf.extractfile(m).read()
+            elif base == f'{session}.xml' or (xml_raw is None and base.endswith('.xml')):
+                xml_raw = tf.extractfile(m).read()
+
+    if not res_raw:
+        raise FileNotFoundError(f'No .res.N files found in {tar_path}')
+
+    fs = 20000.0
+    if xml_raw is not None:
+        root = ET.fromstring(xml_raw)
+        node = root.find('.//acquisitionSystem/samplingRate')
+        if node is None:
+            node = root.find('.//samplingRate')     # NB: leaf Elements are falsy; use explicit None
+        if node is not None and node.text:
+            fs = float(node.text)
+
+    def read_ints(buf):
+        if not buf.strip():
+            return np.empty(0, np.int64)
+        return pd.read_csv(io.BytesIO(buf), header=None).iloc[:, 0].to_numpy(np.int64)
+
+    res = {sh: read_ints(b) for sh, b in res_raw.items()}
+    clu = {sh: read_ints(b)[1:] for sh, b in clu_raw.items()}   # drop the cluster-count line
+    return res, clu, fs
+
+
+def load_hc3_topdir_stage(topdir, sessions, session_durations,
+                          downsample_factor='auto', gap=-1, step=-1,
+                          data_dir='datasets/hc3',
+                          cell_csv='datasets/hc3/hc3-cell.csv',
+                          regions=None, quality_filter=True, tag=None):
+    """Aggregate several sessions of one topdir into a single index-aligned train.
+
+    The neuron set/order are fixed by the cell table for ``topdir`` (region/quality
+    filtered, sorted), so every stage returns the SAME neurons in the SAME order ->
+    learned-A matrices from different stages are comparable element by element.
+    ``sessions`` are concatenated end-to-end with a cumulative time offset; neurons
+    silent within the stage stay as all-zero rows. Thin wrapper over _load_hc3
+    (keep_silent=True). Returns (binned_spikes, true_conn(zeros), neuron_names).
+    """
+    tars = [f'{data_dir}/{s}.tar.gz' for s in sessions]
+    durs = [session_durations[s] for s in sessions]
+    return _load_hc3(tars, durs, cell_csv=cell_csv, topdir=topdir, regions=regions,
+                     quality_filter=quality_filter, downsample_factor=downsample_factor,
+                     keep_silent=True, tag=tag or topdir, data_dir=data_dir)
+
+
+# ec015.03: interleaved task/sleep, same neurons throughout (CA1 63 + EC ~20 quality).
+# Grouped so each stage pools its same-behaviour sessions into one longer train.
+# ec015.03 recording order (interleaved task/rest):
+#   ec015.041 midSquare  -> ec015.042 sleep  -> ec015.043 wheel  -> ec015.044 sleep
+#   -> ec015.045 wheel   -> ec015.046 sleep  -> ec015.047 midSquare
+# NB the 3 sleep blocks are NOT interchangeable: 042 follows midSquare, 044 & 046
+# follow wheel. Pool them only when you don't care about the preceding task; keep
+# them separate (pass explicit session IDs) to look for task-specific reorganisation.
+EC015_03_STAGE_SESSIONS = {
+    'midSquare': ['ec015.041', 'ec015.047'],
+    'wheel':     ['ec015.043', 'ec015.045'],
+    'sleep':     ['ec015.042', 'ec015.044', 'ec015.046'],
+}
+EC015_03_DURATIONS = {                      # seconds, from hc3-session.csv
+    'ec015.041': 2826.0, 'ec015.042': 608.0, 'ec015.043': 2889.0, 'ec015.044': 623.0,
+    'ec015.045': 2922.0, 'ec015.046': 600.0, 'ec015.047': 2967.0,
+}
+
+
+def load_hc3_ec015(stage='wheel', sessions=None,
+                   downsample_factor='auto', gap=-1, step=-1, **overrides):
+    """Load part of topdir ec015.03 for state-dependent connectivity inference.
+
+    Specify EITHER:
+      stage : 'wheel' (default) | 'midSquare' | 'sleep'
+          A named behaviour; its sessions are pooled into one train. 'sleep' pools
+          the 3 interleaved sleep blocks (~30 min); 'wheel'/'midSquare' pool their
+          2 task sessions (~95-100 min each).
+      sessions : list[str] or str
+          Exact session ID(s), e.g. ['ec015.044', 'ec015.046'] or 'ec015.042'.
+          Overrides `stage`. Use this to keep the sleep blocks apart -- 042 follows
+          midSquare, 044 & 046 follow wheel -- so pooling doesn't wash out any
+          task-specific reorganisation. Valid IDs: ec015.041 .. ec015.047.
+
+    Every call returns the SAME CA1+EC neuron set in the SAME order (fixed by the
+    cell table), so learned A matrices from different stages/sessions are directly
+    comparable element by element. Thin wrapper over load_hc3_topdir_stage.
+    """
+    if sessions is not None:
+        if isinstance(sessions, str):
+            sessions = [sessions]
+        unknown = [s for s in sessions if s not in EC015_03_DURATIONS]
+        if unknown:
+            raise ValueError(f"unknown session IDs {unknown}; valid: {list(EC015_03_DURATIONS)}")
+        tag = 'ec015.03_' + '+'.join(s.split('.')[-1] for s in sessions)
+    else:
+        if stage not in EC015_03_STAGE_SESSIONS:
+            raise ValueError(f"stage must be one of {list(EC015_03_STAGE_SESSIONS)}, got {stage!r}")
+        sessions = EC015_03_STAGE_SESSIONS[stage]
+        tag = f'ec015.03_{stage}'
+    params = dict(
+        topdir='ec015.03',
+        sessions=sessions,
+        session_durations=EC015_03_DURATIONS,
+        regions=['CA1', 'EC2', 'EC3', 'EC5'],
+        quality_filter=True,
+        tag=tag,
+    )
+    params.update(overrides)
+    return load_hc3_topdir_stage(downsample_factor=downsample_factor, gap=gap, step=step, **params)

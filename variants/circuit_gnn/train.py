@@ -16,10 +16,8 @@ class TrainConfig:
     batch_size: int = 16
     num_epochs: int = 20
     lr: float = 1e-4
-    l1_lambda: float = 0.0
-    competitive_lambda: float = 0.0
-    indirect_lambda: float = 0.0    # penalises edges explained by two-hop paths
-    model_type: str = "standard"    # "standard" | "dales"
+    log_sum_penalty_lambda: float = 2.0
+    competitive_lambda: float = 15.0
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     seed: int = 0
     num_workers: int = 0
@@ -31,17 +29,26 @@ def make_dataloaders(
     window_size: int,
     batch_size: int,
     seed: int = 0,
-    num_workers: int = 0,
+    num_workers: int = 1,
 ) -> Tuple[DataLoader, Optional[DataLoader]]:
     if not isinstance(spike_data, torch.Tensor):
         spike_data = torch.tensor(spike_data, dtype=torch.float32)
 
     dataset = SpikeTrainDataset(spike_data, window_size)
 
+    # 80% train, 20% val
     total_len = len(dataset)
     train_end = int(0.8 * total_len)
     train_set = torch.utils.data.Subset(dataset, range(0, train_end))
     val_set = torch.utils.data.Subset(dataset, range(train_end, total_len))
+
+    train_loader = DataLoader(
+        train_set,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=True,
+    )
 
     val_loader = DataLoader(
         val_set,
@@ -50,13 +57,8 @@ def make_dataloaders(
         num_workers=num_workers,
         pin_memory=True,
     )
-    train_loader = DataLoader(
-        train_set,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-        pin_memory=True,
-    )
+
+
     return train_loader, val_loader
 
 
@@ -66,12 +68,15 @@ def build_models(
     encoder_kwargs: Optional[Dict[str, Any]] = None,
     gnn_kwargs: Optional[Dict[str, Any]] = None,
     device: str = "cpu",
-    model_type: str = "standard",
-) -> Tuple[SpikeEncoder, nn.Module]:
+    firing_rates: Optional[torch.Tensor] = None,
+) -> Tuple[SpikeEncoder, GraphNeuralNetwork]:
     encoder_kwargs = encoder_kwargs or {}
     gnn_kwargs = gnn_kwargs or {}
 
-    encoder = SpikeEncoder(window_size=window_size, **encoder_kwargs).to(device)
+    # the encoder needs num_neurons (per-neuron memory + rate stats) and firing_rates
+    # (per-neuron baseline for the rate normalization); firing_rates=None -> identity.
+    encoder = SpikeEncoder(window_size=window_size, num_neurons=num_neurons,
+                           firing_rates=firing_rates, **encoder_kwargs).to(device)
     gnn = GraphNeuralNetwork(num_neurons=num_neurons, **gnn_kwargs).to(device)
 
     return encoder, gnn
@@ -81,41 +86,32 @@ def compute_loss(
     predictions: torch.Tensor,
     targets: torch.Tensor,
     criterion: nn.Module,
-    l1_lambda: float = 7.5,
+    log_sum_penalty_lambda: float = 2.0,
     competitive_lambda: float = 15.0,
-    indirect_lambda: float = 0.0,
     model: Optional[nn.Module] = None,
 ) -> torch.Tensor:
     loss = criterion(predictions, targets)
     if model is not None:
-        if hasattr(model, 'learned_adj_exc') and hasattr(model, 'learned_adj_inh'):
 
-            penalty_norm = float(model.learned_adj_exc.shape[0]) # divide by N for a per-neuron budget
+        penalty_norm = float(model.learned_adj_exc.shape[0]) # divide by N for a per-neuron budget
 
-            l1_adj = l1_lambda / penalty_norm * (torch.log(1 + torch.abs(model.learned_adj_exc)).sum() + torch.log(1 + torch.abs(model.learned_adj_inh)).sum())
-            competitive_penalty = competitive_lambda / penalty_norm * (torch.relu(model.learned_adj_exc) * torch.relu(model.learned_adj_inh)).sum()
+        log_sum_penalty_adj = log_sum_penalty_lambda / penalty_norm * (torch.log(1 + torch.abs(model.learned_adj_exc)).sum() + torch.log(1 + torch.abs(model.learned_adj_inh)).sum())
+        competitive_penalty = competitive_lambda / penalty_norm * (torch.relu(model.learned_adj_exc) * torch.relu(model.learned_adj_inh)).sum()
 
-            loss = loss + l1_adj + competitive_penalty
-            
-        
-        if indirect_lambda > 0.0 and hasattr(model, 'get_adjacency'): # indirect-connection penalty: penalise edges explained by two-hop paths
-            A = model.get_adjacency()
-            A_two_hop = (A @ A).detach()  # detach to avoid higher-order gradients
-            loss = loss + indirect_lambda / float(A.shape[0]) * (A * A_two_hop.abs()).abs().sum()
+        loss = loss + log_sum_penalty_adj + competitive_penalty
 
     return loss
 
 
 def train_epoch(
     encoder: SpikeEncoder,
-    gnn: nn.Module,
+    gnn: GraphNeuralNetwork,
     dataloader: DataLoader,
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
     device: str,
     competitive_lambda: float = 15.0,
-    l1_lambda: float = 7.5,
-    indirect_lambda: float = 0.0,
+    log_sum_penalty_lambda: float = 2.0,
 ) -> float:
     encoder.train()
     gnn.train()
@@ -128,11 +124,7 @@ def train_epoch(
         optimizer.zero_grad()
         embeddings = encoder(inputs)
         outputs = gnn(embeddings)
-        loss = compute_loss(
-            outputs, targets, criterion,
-            l1_lambda, competitive_lambda, indirect_lambda,
-            model=gnn,
-        )
+        loss = compute_loss(outputs, targets, criterion, log_sum_penalty_lambda, competitive_lambda, model=gnn)
         loss.backward()
         optimizer.step()
 
@@ -143,7 +135,7 @@ def train_epoch(
 
 def eval_epoch(
     encoder: SpikeEncoder,
-    gnn: nn.Module,
+    gnn: GraphNeuralNetwork,
     dataloader: DataLoader,
     criterion: nn.Module,
     device: str,
@@ -156,6 +148,7 @@ def eval_epoch(
         for inputs, targets in dataloader:
             inputs = inputs.to(device)
             targets = targets.to(device)
+
             embeddings = encoder(inputs)
             outputs = gnn(embeddings)
             loss = criterion(outputs, targets)
@@ -184,28 +177,41 @@ def train_model(
         config.num_workers,
     )
 
+    # per-neuron mean spikes-per-bin for the encoder's rate normalization.
+    if not isinstance(spike_data, torch.Tensor):
+        spike_data = torch.tensor(spike_data, dtype=torch.float32)
+    firing_rates = spike_data.float().mean(dim=1)
+
     encoder, gnn = build_models(
         num_neurons=num_neurons,
         window_size=config.window_size,
         encoder_kwargs=encoder_kwargs,
         gnn_kwargs=gnn_kwargs,
         device=device,
-        model_type=config.model_type,
+        firing_rates=firing_rates,
     )
 
     if criterion is None:
         criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(list(encoder.parameters()) + list(gnn.parameters()), lr=config.lr)
 
-    history: Dict[str, Any] = {"train_loss": [], "val_loss": []}
+    history: Dict[str, Any] = {
+        "train_loss": [],
+        "val_loss": [],
+    }
+
     best_val = float('inf')
 
     for epoch in range(1, config.num_epochs + 1):
         train_loss = train_epoch(
-            encoder, gnn, train_loader, optimizer, criterion, device,
+            encoder,
+            gnn,
+            train_loader,
+            optimizer,
+            criterion,
+            device,
             config.competitive_lambda,
-            config.l1_lambda,
-            config.indirect_lambda,
+            config.log_sum_penalty_lambda,
         )
         history["train_loss"].append(train_loss)
 
@@ -213,6 +219,7 @@ def train_model(
             val_loss = eval_epoch(encoder, gnn, val_loader, criterion, device)
             history["val_loss"].append(val_loss)
 
+            # Save best checkpoint
             if val_loss < best_val:
                 best_val = val_loss
                 model_name = f"best_model_run_{run_id}.pt" if run_id is not None else "best_model.pt"
@@ -237,8 +244,8 @@ def train_model(
 
 def save_checkpoint(
     path: str,
-    encoder: nn.Module,
-    gnn: nn.Module,
+    encoder: SpikeEncoder,
+    gnn: GraphNeuralNetwork,
     optimizer: torch.optim.Optimizer,
     epoch: int,
     history: Dict[str, Any],
@@ -253,15 +260,14 @@ def save_checkpoint(
     torch.save(state, path)
 
 
-def load_checkpoint(
-    path: str,
-    encoder: nn.Module,
-    gnn: nn.Module,
-    optimizer: Optional[torch.optim.Optimizer] = None,
-) -> Dict[str, Any]:
+def load_checkpoint(path: str, encoder: SpikeEncoder, gnn: GraphNeuralNetwork, optimizer: Optional[torch.optim.Optimizer] = None) -> Dict[str, Any]:
     state = torch.load(path, map_location="cpu")
     encoder.load_state_dict(state["encoder_state_dict"])
     gnn.load_state_dict(state["gnn_state_dict"])
     if optimizer is not None:
         optimizer.load_state_dict(state["optimizer_state_dict"])
     return state
+
+
+if __name__ == "__main__":
+    print("This module is intended to be imported. Use `train_model(...)` from your script.")

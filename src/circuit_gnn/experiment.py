@@ -15,15 +15,14 @@ class RunConfig:
     # data / sweep
     downsample_factor: Union[int, str] = "auto"
     num_runs: int = 5
-    init_method: str = "none"     
 
     # training
     window_size: int = 100
     batch_size: int = 16
     num_epochs: int = 20
     lr: float = 1e-4
-    l1_lambda: float = 5e-2
-    competitive_lambda: float = 1e-1
+    log_sum_penalty_lambda: float = 2.0
+    competitive_lambda: float = 15.0
 
     # encoder / gnn
     conv_filters: int = 32
@@ -31,8 +30,8 @@ class RunConfig:
     hidden_dim: int = 64
     num_layers: int = 5
     output_dim: int = 1
-    desired_max: float = 0.05
-    init_noise: float = 0.01
+    mem_dim: int = 16          # width of each neuron's persistent memory slot
+    eps: float = 1e-3          # Poisson-scale floor for the encoder's rate normalization
 
 
 # plot_fn(learned_A, run_idx, save_dir, neuron_names) -> None
@@ -64,42 +63,29 @@ def run_experiment(
     plot_fn: Optional[PlotFn] = None,
     loader_kwargs: Optional[dict] = None,
     device: Optional[torch.device] = None,
+    results_root: Optional[Union[str, Path]] = None,
 ) -> None:
-    """Train the baseline GNN for `cfg.num_runs` seeds and log the A ablation.
+    """Train the GNN for `cfg.num_runs` seeds and log the A ablation.
 
-    data          : dataset name (used for the init/results paths)
+    data          : dataset name (used for the results path)
     loader        : load_<dataset>_network; called with downsample_factor + loader_kwargs
     cfg           : RunConfig (universal defaults; pass overrides per script)
     plot_fn       : optional callback to render each run's learned adjacency
     loader_kwargs : extra kwargs for the loader (e.g. {'gap': 0.20, 'step': 1})
+    results_root  : base dir for outputs; results go to <results_root>/<data>
+                    (default "results", so results/<data>)
     """
     cfg = cfg or RunConfig()
     loader_kwargs = loader_kwargs or {}
     device = device or (torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
-
-    signed_init = "signed" in cfg.init_method.lower()
-    A_init_path = Path("datasets") / data / "init" / f"{cfg.init_method}.npy"
+    results_root = Path(results_root) if results_root is not None else Path("results")
 
     binned_spikes, true_conn, neuron_names = loader(
         downsample_factor=cfg.downsample_factor, **loader_kwargs)
     num_channels, num_time = binned_spikes.shape
     print(f"Loaded {num_channels} channels, {num_time} time points.")
 
-    A_init = None
-    if A_init_path.exists():
-        A_init = torch.tensor(np.load(A_init_path).T, dtype=torch.float32, device=device)
-        print(f"Loaded adjacency init from {A_init_path}.")
-    else:
-        print(f"Warning: init file not found at {A_init_path}. Using random init.")
-
-    if cfg.init_method.lower() == "none":
-        init_type = "no_init"
-    elif signed_init:
-        init_type = "signed"
-    else:
-        init_type = "unsigned"
-
-    output_dir = Path("results") / data / init_type
+    output_dir = results_root / data
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # source is raw counts; the prediction target is clamped to {0,1}
@@ -126,7 +112,7 @@ def run_experiment(
             batch_size=cfg.batch_size,
             num_epochs=cfg.num_epochs,
             lr=cfg.lr,
-            l1_lambda=cfg.l1_lambda,
+            log_sum_penalty_lambda=cfg.log_sum_penalty_lambda,
             competitive_lambda=cfg.competitive_lambda,
             device=device,
             seed=run_idx,
@@ -139,16 +125,14 @@ def run_experiment(
             config=config,
             criterion=criterion,
             encoder_kwargs={"conv_out_channels": cfg.conv_filters,
-                            "embedding_dim": cfg.embedding_dim},
+                            "embedding_dim": cfg.embedding_dim,
+                            "mem_dim": cfg.mem_dim,
+                            "eps": cfg.eps},
             gnn_kwargs={
                 "embedding_dim": cfg.embedding_dim,
                 "hidden_dim": cfg.hidden_dim,
                 "output_dim": cfg.output_dim,
                 "num_layers": cfg.num_layers,
-                "A_init": A_init,
-                "signed_init": signed_init,
-                "desired_max": cfg.desired_max,
-                "init_noise": cfg.init_noise,
             },
             run_id=run_idx,
         )

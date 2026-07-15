@@ -1,9 +1,15 @@
-"""Variant sweep runner for circuitGNN.
+"""Variant sweep runner for circuitGNN (rate-norm + memory-slot + Hadamard model).
 
 Run from repo root:
     python variants/run_variants.py --datasets X --variants Y --num_runs Z
 
 Results are written to variants/results/{dataset}/{variant}/.
+
+The model is the src/circuit_gnn architecture (rate-normalized memory-slot encoder +
+Hadamard-modulator GNN). This sweep varies only the two knobs that architecture adds
+on top of the baseline: `eps` (the rate-norm Poisson floor) and `mem_dim` (the
+per-neuron memory width). Each is swept one-at-a-time around the default
+(eps=1e-3, mem_dim=16); the shared default point is eps_1e-3 == mem_16.
 """
 
 import os
@@ -21,339 +27,94 @@ REPO_ROOT = VARIANTS_DIR.parent
 sys.path.insert(0, str(VARIANTS_DIR))
 os.chdir(str(REPO_ROOT))
 
-from circuit_gnn.data import load_yuto_network, load_pdcm_network, load_pdcm_large_network, load_arbitrary_network, load_small_circuit_A_network, load_small_circuit_B_network, load_mdp_network, load_v1_v2_network, load_hc3_session
+from circuit_gnn.data import load_yuto_network, load_pdcm_network, load_pdcm_large_network, load_arbitrary_network, load_small_circuit_A_network, load_small_circuit_B_network, load_mdp_network, load_v1_v2_network
 from circuit_gnn.train import TrainConfig, train_model, load_checkpoint
-from circuit_gnn.utils import plot_connectivity_matrix, plot_pdcm_matrix, plot_mdp_matrix, plot_v1_v2_matrix, plot_hc3_matrix
+from circuit_gnn.utils import plot_connectivity_matrix, plot_pdcm_matrix, plot_mdp_matrix, plot_v1_v2_matrix
 
 RESULTS_BASE = VARIANTS_DIR / "results"
 
 # variant definitions
-# config: TrainConfig field overrides
-# encoder_kwargs / gnn_kwargs: forwarded to build_models
+#   config          — TrainConfig field overrides (batch_size, log_sum_penalty_lambda, ...)
+#   encoder_kwargs  — passed to SpikeEncoder (conv_out_channels, kernel_size, embedding_dim,
+#                     mem_dim, eps); num_neurons + firing_rates are supplied by train_model
+#   gnn_kwargs      — passed to GraphNeuralNetwork (embedding_dim, hidden_dim, output_dim, num_layers)
 
-_BASE_ENC = {"conv_out_channels": 32, "embedding_dim": 64, "kernel_size": 3}
-_BASE_GNN = {"embedding_dim": 64, "hidden_dim": 64, "output_dim": 1, "num_layers": 5, "desired_max": 0.05, "init_noise": 0.01}
-_BASE_CFG = {"batch_size": 16, "l1_lambda": 7.5, "competitive_lambda": 15.0}
-
-# Each variant may contain:
-#   config              — TrainConfig field overrides (batch_size, window_size, l1_lambda, ...)
-#   encoder_kwargs      — passed to SpikeEncoder (conv_out_channels, kernel_size, embedding_dim)
-#   gnn_kwargs          — passed to GraphNeuralNetwork (num_layers, hidden_dim, ...)
-#   downsample_override — {dataset: factor} map; dataset is skipped if not present in map
+_BASE_ENC = {"conv_out_channels": 32, "embedding_dim": 64, "kernel_size": 3, "mem_dim": 16, "eps": 1e-3}
+_BASE_GNN = {"embedding_dim": 64, "hidden_dim": 64, "output_dim": 1, "num_layers": 5}
+_BASE_CFG = {"batch_size": 16, "log_sum_penalty_lambda": 2.0, "competitive_lambda": 15.0}
 
 VARIANTS = {
 
-    # batch size
-    "batch_4":        {"config": {**_BASE_CFG, "batch_size": 4},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "batch_16":       {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "batch_32":       {"config": {**_BASE_CFG, "batch_size": 32},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "batch_64":       {"config": {**_BASE_CFG, "batch_size": 64},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
+    # eps sweep — rate-norm Poisson floor (mem_dim fixed at 16)
+    "eps_1e-4": {"config": dict(**_BASE_CFG),
+                 "encoder_kwargs": {**_BASE_ENC, "eps": 1e-4}, "gnn_kwargs": dict(**_BASE_GNN)},
+    "eps_1e-3": {"config": dict(**_BASE_CFG),                       # == mem_16 (shared default)
+                 "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
+    "eps_1e-2": {"config": dict(**_BASE_CFG),
+                 "encoder_kwargs": {**_BASE_ENC, "eps": 1e-2}, "gnn_kwargs": dict(**_BASE_GNN)},
+    "eps_1e-1": {"config": dict(**_BASE_CFG),
+                 "encoder_kwargs": {**_BASE_ENC, "eps": 1e-1}, "gnn_kwargs": dict(**_BASE_GNN)},
 
-    # number of GNN layers
-    "layers_1":       {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": {**_BASE_GNN, "num_layers": 1}},
-    "layers_3":       {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": {**_BASE_GNN, "num_layers": 3}},
-    "layers_5":       {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "layers_7":       {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": {**_BASE_GNN, "num_layers": 7}},
-
-    # bin size via downsample factor
-    "bin_1ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 2, "pdcm": 1, "pdcm_large": 1, "mdp": 1, "v1_v2": 1, "arbitrary": 1, "small_circuit_A": 2, "small_circuit_B": 2},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "bin_2ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 4, "pdcm": 2, "pdcm_large": 2, "mdp": 2, "v1_v2": 2, "arbitrary": 2, "small_circuit_A": 4, "small_circuit_B": 4},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "bin_3ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 6, "pdcm": 3, "pdcm_large": 3, "mdp": 3, "v1_v2": 3, "arbitrary": 3, "small_circuit_A": 6, "small_circuit_B": 6},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "bin_4ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 8, "pdcm": 4, "pdcm_large": 4, "mdp": 4, "v1_v2": 4, "arbitrary": 4, "small_circuit_A": 8, "small_circuit_B": 8},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "bin_5ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 10, "pdcm": 5, "pdcm_large": 5, "mdp": 5, "v1_v2": 5, "arbitrary": 5, "small_circuit_A": 10, "small_circuit_B": 10},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "bin_6ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 12, "pdcm": 6, "pdcm_large": 6, "mdp": 6, "v1_v2": 6, "arbitrary": 6, "small_circuit_A": 12, "small_circuit_B": 12},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "bin_7ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 14, "pdcm": 7, "pdcm_large": 7, "mdp": 7, "v1_v2": 7, "arbitrary": 7, "small_circuit_A": 14, "small_circuit_B": 14},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "bin_8ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 16, "pdcm": 8, "pdcm_large": 8, "mdp": 8, "v1_v2": 8, "arbitrary": 8, "small_circuit_A": 16, "small_circuit_B": 16},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "bin_9ms":        {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 18, "pdcm": 9, "pdcm_large": 9, "mdp": 9, "v1_v2": 9, "arbitrary": 9, "small_circuit_A": 18, "small_circuit_B": 18},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "bin_10ms":       {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 20, "pdcm": 10, "pdcm_large": 10, "mdp": 10, "v1_v2": 10, "arbitrary": 10, "small_circuit_A": 20, "small_circuit_B": 20},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "bin_20ms":       {"config": {**_BASE_CFG, "num_epochs": 50},
-                       "downsample_override": {"yuto": 40, "pdcm": 20, "pdcm_large": 20, "mdp": 20, "v1_v2": 20, "arbitrary": 20, "small_circuit_A": 40, "small_circuit_B": 40},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-
-    # window size
-    "window_5":       {"config": {**_BASE_CFG, "window_size": 5},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "window_10":      {"config": {**_BASE_CFG, "window_size": 10},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "window_50":      {"config": {**_BASE_CFG, "window_size": 50},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "window_100":     {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "window_200":     {"config": {**_BASE_CFG, "window_size": 200},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-
-    # encoder conv channels
-    "channels_8":     {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": {**_BASE_ENC, "conv_out_channels": 8},
-                       "gnn_kwargs": dict(**_BASE_GNN)},
-    "channels_16":    {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": {**_BASE_ENC, "conv_out_channels": 16},
-                       "gnn_kwargs": dict(**_BASE_GNN)},
-    "channels_32":    {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "channels_64":    {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": {**_BASE_ENC, "conv_out_channels": 64},
-                       "gnn_kwargs": dict(**_BASE_GNN)},
-
-    # encoder kernel size
-    "kernel_size_2":  {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": {**_BASE_ENC, "kernel_size": 2},
-                       "gnn_kwargs": dict(**_BASE_GNN)},
-    "kernel_size_3":  {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "kernel_size_4":  {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": {**_BASE_ENC, "kernel_size": 4},
-                       "gnn_kwargs": dict(**_BASE_GNN)},
-
-    # L1 regularisation on adjacency (sparsity)
-    "l1_0p5":         {"config": {**_BASE_CFG, "l1_lambda": 0.5},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "l1_1":           {"config": {**_BASE_CFG, "l1_lambda": 1.0},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "l1_1p5":         {"config": {**_BASE_CFG, "l1_lambda": 1.5},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "l1_2":           {"config": {**_BASE_CFG, "l1_lambda": 2.0},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "l1_2p5":         {"config": {**_BASE_CFG, "l1_lambda": 2.5},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "l1_5":           {"config": {**_BASE_CFG, "l1_lambda": 5.0},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "l1_7p5":         {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "l1_10":          {"config": {**_BASE_CFG, "l1_lambda": 10.0},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "l1_15":          {"config": {**_BASE_CFG, "l1_lambda": 15.0},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-
-    # competitive lambda (exc/inh separation)
-    "comp_5":         {"config": {**_BASE_CFG, "competitive_lambda": 5.0},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "comp_10":        {"config": {**_BASE_CFG, "competitive_lambda": 10.0},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "comp_15":        {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "comp_20":        {"config": {**_BASE_CFG, "competitive_lambda": 20.0},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "comp_30":        {"config": {**_BASE_CFG, "competitive_lambda": 30.0},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-
-    # L1 × competitive lambda sweep
-    "l1_1_comp_5":      {"config": {**_BASE_CFG, "l1_lambda": 1.0, "competitive_lambda": 5.0},
-                         "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "l1_1_comp_10":     {"config": {**_BASE_CFG, "l1_lambda": 1.0, "competitive_lambda": 10.0},
-                         "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "l1_1_comp_15":     {"config": {**_BASE_CFG, "l1_lambda": 1.0, "competitive_lambda": 15.0},
-                         "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "l1_1p5_comp_5":    {"config": {**_BASE_CFG, "l1_lambda": 1.5, "competitive_lambda": 5.0},
-                         "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "l1_1p5_comp_10":   {"config": {**_BASE_CFG, "l1_lambda": 1.5, "competitive_lambda": 10.0},
-                         "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "l1_1p5_comp_15":   {"config": {**_BASE_CFG, "l1_lambda": 1.5, "competitive_lambda": 15.0},
-                         "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "l1_2_comp_5":      {"config": {**_BASE_CFG, "l1_lambda": 2.0, "competitive_lambda": 5.0},
-                         "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "l1_2_comp_10":     {"config": {**_BASE_CFG, "l1_lambda": 2.0, "competitive_lambda": 10.0},
-                         "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "l1_2_comp_15":     {"config": {**_BASE_CFG, "l1_lambda": 2.0, "competitive_lambda": 15.0},
-                         "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "l1_2p5_comp_5":    {"config": {**_BASE_CFG, "l1_lambda": 2.5, "competitive_lambda": 5.0},
-                         "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "l1_2p5_comp_10":   {"config": {**_BASE_CFG, "l1_lambda": 2.5, "competitive_lambda": 10.0},
-                         "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "l1_2p5_comp_15":   {"config": {**_BASE_CFG, "l1_lambda": 2.5, "competitive_lambda": 15.0},
-                         "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-
-    # self_scale in GNNLayer
-    "self_0p1":       {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": {**_BASE_GNN, "self_scale": 0.1}},
-    "self_0p25":      {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": {**_BASE_GNN, "self_scale": 0.25}},
-    "self_0p5":       {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "self_1":         {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": {**_BASE_GNN, "self_scale": 1.0}},
-
-    # embedding dim (encoder → GNN dimension) 
-    "emb_16":         {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 16},
-                       "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 16}},
-    "emb_32":         {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 32},
-                       "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 32}},
-    "emb_64":         {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "emb_128":        {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 128},
-                       "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 128}},
-
-    # GNN hidden dim
-    "hidden_32":      {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": {**_BASE_GNN, "hidden_dim": 32}},
-    "hidden_64":      {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "hidden_128":     {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": {**_BASE_GNN, "hidden_dim": 128}},
-
-    # learning rate
-    "lr_1e-5":        {"config": {**_BASE_CFG, "lr": 1e-5},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "lr_5e-5":        {"config": {**_BASE_CFG, "lr": 5e-5},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "lr_1e-4":        {"config": dict(**_BASE_CFG),
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    "lr_5e-4":        {"config": {**_BASE_CFG, "lr": 5e-4},
-                       "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
-    
-    # COMBINATION: encoder conv channels and kernel size
-    "kernel_2_channels_8": {"config": dict(**_BASE_CFG),
-                            "encoder_kwargs": {**_BASE_ENC, "kernel_size": 2, "conv_out_channels": 8}, "gnn_kwargs": dict(**_BASE_GNN)},
-    "kernel_2_channels_16": {"config": dict(**_BASE_CFG),
-                            "encoder_kwargs": {**_BASE_ENC, "kernel_size": 2, "conv_out_channels": 16}, "gnn_kwargs": dict(**_BASE_GNN)}, 
-    "kernel_2_channels_32": {"config": dict(**_BASE_CFG),
-                            "encoder_kwargs": {**_BASE_ENC, "kernel_size": 2, "conv_out_channels": 32}, "gnn_kwargs": dict(**_BASE_GNN)}, 
-    "kernel_2_channels_64": {"config": dict(**_BASE_CFG),
-                            "encoder_kwargs": {**_BASE_ENC, "kernel_size": 2, "conv_out_channels": 64}, "gnn_kwargs": dict(**_BASE_GNN)}, 
-
-    "kernel_3_channels_8": {"config": dict(**_BASE_CFG),
-                            "encoder_kwargs": {**_BASE_ENC, "kernel_size": 3, "conv_out_channels": 8}, "gnn_kwargs": dict(**_BASE_GNN)},
-    "kernel_3_channels_16": {"config": dict(**_BASE_CFG),
-                            "encoder_kwargs": {**_BASE_ENC, "kernel_size": 3, "conv_out_channels": 16}, "gnn_kwargs": dict(**_BASE_GNN)}, 
-    "kernel_3_channels_32": {"config": dict(**_BASE_CFG),
-                            "encoder_kwargs": {**_BASE_ENC, "kernel_size": 3, "conv_out_channels": 32}, "gnn_kwargs": dict(**_BASE_GNN)}, 
-    "kernel_3_channels_64": {"config": dict(**_BASE_CFG),
-                             "encoder_kwargs": {**_BASE_ENC, "kernel_size": 3, "conv_out_channels": 64}, "gnn_kwargs": dict(**_BASE_GNN)},
-
-    # kernel size 4
-    "kernel_4_channels_8": {"config": dict(**_BASE_CFG),
-                            "encoder_kwargs": {**_BASE_ENC, "kernel_size": 4, "conv_out_channels": 8}, "gnn_kwargs": dict(**_BASE_GNN)},
-    "kernel_4_channels_16": {"config": dict(**_BASE_CFG),
-                            "encoder_kwargs": {**_BASE_ENC, "kernel_size": 4, "conv_out_channels": 16},  "gnn_kwargs": dict(**_BASE_GNN)}, 
-    "kernel_4_channels_32": {"config": dict(**_BASE_CFG),
-                            "encoder_kwargs": {**_BASE_ENC, "kernel_size": 4, "conv_out_channels": 32},  "gnn_kwargs": dict(**_BASE_GNN)}, 
-    "kernel_4_channels_64": {"config": dict(**_BASE_CFG),
-                            "encoder_kwargs": {**_BASE_ENC, "kernel_size": 4, "conv_out_channels": 64}, "gnn_kwargs": dict(**_BASE_GNN)},
-    
-    # COMBINATION: embedding dim and hidden dim
-    "emb_16_hidden_16": {"config": dict(**_BASE_CFG),
-                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 16}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 16, "hidden_dim": 16}},
-    "emb_16_hidden_32": {"config": dict(**_BASE_CFG), 
-                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 16}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 16, "hidden_dim": 32}}, 
-    "emb_16_hidden_64": {"config": dict(**_BASE_CFG), 
-                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 16}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 16, "hidden_dim": 64}},
-    "emb_16_hidden_128": {"config": dict(**_BASE_CFG), 
-                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 16}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 16, "hidden_dim": 128}},
-
-    "emb_32_hidden_16": {"config": dict(**_BASE_CFG), 
-                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 32}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 32, "hidden_dim": 16}}, 
-    "emb_32_hidden_32": {"config": dict(**_BASE_CFG), 
-                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 32}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 32, "hidden_dim": 32}}, 
-    "emb_32_hidden_64": {"config": dict(**_BASE_CFG), 
-                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 32}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 32, "hidden_dim": 64}},
-    "emb_32_hidden_128": {"config": dict(**_BASE_CFG), 
-                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 32}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 32, "hidden_dim": 128}},
-
-    "emb_64_hidden_16": {"config": dict(**_BASE_CFG), 
-                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 64}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 64, "hidden_dim": 16}}, 
-    "emb_64_hidden_32": {"config": dict(**_BASE_CFG), 
-                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 64}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 64, "hidden_dim": 32}}, 
-    "emb_64_hidden_64": {"config": dict(**_BASE_CFG), 
-                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 64}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 64, "hidden_dim": 64}}, 
-    "emb_64_hidden_128": {"config": dict(**_BASE_CFG), 
-                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 64}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 64, "hidden_dim": 128}}, 
-
-    "emb_128_hidden_16": {"config": dict(**_BASE_CFG), 
-                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 128}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 128, "hidden_dim": 16}}, 
-    "emb_128_hidden_32": {"config": dict(**_BASE_CFG), 
-                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 128}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 128, "hidden_dim": 32}},
-    "emb_128_hidden_64": {"config": dict(**_BASE_CFG), 
-                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 128}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 128, "hidden_dim": 64}},
-    "emb_128_hidden_128": {"config": dict(**_BASE_CFG), 
-                        "encoder_kwargs": {**_BASE_ENC, "embedding_dim": 128}, "gnn_kwargs": {**_BASE_GNN, "embedding_dim": 128, "hidden_dim": 128}},
+    # mem_dim sweep — per-neuron memory width (eps fixed at 1e-3)
+    "mem_4":  {"config": dict(**_BASE_CFG),
+               "encoder_kwargs": {**_BASE_ENC, "mem_dim": 4}, "gnn_kwargs": dict(**_BASE_GNN)},
+    "mem_8":  {"config": dict(**_BASE_CFG),
+               "encoder_kwargs": {**_BASE_ENC, "mem_dim": 8}, "gnn_kwargs": dict(**_BASE_GNN)},
+    "mem_16": {"config": dict(**_BASE_CFG),                         # == eps_1e-3 (shared default)
+               "encoder_kwargs": dict(**_BASE_ENC), "gnn_kwargs": dict(**_BASE_GNN)},
+    "mem_32": {"config": dict(**_BASE_CFG),
+               "encoder_kwargs": {**_BASE_ENC, "mem_dim": 32}, "gnn_kwargs": dict(**_BASE_GNN)},
 }
 
 # dataset registry
+# downsample_factor='auto' -> the bin is chosen by signkappa_interior inside each loader
+# (circuit_gnn.optimal_bin_size).
 DATASET_REGISTRY = {
     "yuto": {
         "loader": load_yuto_network,
-        "loader_kwargs": {"downsample_factor": 20, "gap": 0.20, "step": 1},
+        "loader_kwargs": {"downsample_factor": "auto", "gap": 0.20, "step": 1},
         "num_epochs": 20,
         "default_window": 100,
     },
     "arbitrary": {
         "loader": load_arbitrary_network,
-        "loader_kwargs": {"downsample_factor": 10},
+        "loader_kwargs": {"downsample_factor": "auto"},
         "num_epochs": 20,
         "default_window": 100,
     },
     "pdcm": {
         "loader": load_pdcm_network,
-        "loader_kwargs": {"downsample_factor": 2},
+        "loader_kwargs": {"downsample_factor": "auto"},
         "num_epochs": 50,
         "default_window": 100,
     },
     "pdcm_large": {
         "loader": load_pdcm_large_network,
-        "loader_kwargs": {"downsample_factor": 6},
+        "loader_kwargs": {"downsample_factor": "auto"},
         "num_epochs": 50,
         "default_window": 100,
     },
     "mdp": {
         "loader": load_mdp_network,
-        "loader_kwargs": {"downsample_factor": 6},
+        "loader_kwargs": {"downsample_factor": "auto"},
         "num_epochs": 50,
         "default_window": 100,
     },
     "v1_v2": {
         "loader": load_v1_v2_network,
-        "loader_kwargs": {"downsample_factor": 6},
+        "loader_kwargs": {"downsample_factor": "auto"},
         "num_epochs": 50,
         "default_window": 100,
     },
     "small_circuit_A": {
         "loader": load_small_circuit_A_network,
-        "loader_kwargs": {"downsample_factor": 20},
+        "loader_kwargs": {"downsample_factor": "auto"},
         "num_epochs": 20,
         "default_window": 100,
     },
     "small_circuit_B": {
         "loader": load_small_circuit_B_network,
-        "loader_kwargs": {"downsample_factor": 20},
-        "num_epochs": 20,
-        "default_window": 100,
-    },
-    # in-vivo hc-3 session (no ground truth); same session/window as the baselines.
-    # downsample_factor='auto' is resolved inside the loader (native res 1 ms).
-    "hc3": {
-        "loader": load_hc3_session,
-        "loader_kwargs": {"downsample_factor": "auto", "tar_path": "datasets/hc3/ec016.1016.tar.gz", "topdir": "ec016.58", "cell_csv": "datasets/hc3/hc3-cell.csv", "regions": ["CA3", "DG", "EC2", "EC3"], "quality_filter": True, "max_time_s": 2000},
+        "loader_kwargs": {"downsample_factor": "auto"},
         "num_epochs": 20,
         "default_window": 100,
     },
@@ -370,8 +131,11 @@ def make_criterion(spike_tensor: torch.Tensor, device) -> torch.nn.Module:
 
 
 def extract_adjacency(gnn: torch.nn.Module) -> np.ndarray:
+    # signed adjacency = relu(exc) - relu(inh), diagonal zeroed; returned as [pre, post]
     with torch.no_grad():
-        return gnn.get_adjacency().cpu().numpy().T
+        A = torch.relu(gnn.learned_adj_exc) - torch.relu(gnn.learned_adj_inh)
+        A = A * (1 - torch.eye(A.size(0), device=A.device))
+        return A.cpu().numpy().T
 
 
 def eval_with_scale(encoder, gnn, val_loader, criterion, device, A_scale: float) -> float:
@@ -400,23 +164,8 @@ def run_dataset_variant(
     output_dir = RESULTS_BASE / dataset_name / variant_name
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Resolve effective downsample_factor
-    if "downsample_override" in variant_spec:
-        override = variant_spec["downsample_override"]
-        if dataset_name not in override:
-            print(f"  Skipping {dataset_name} (not in downsample_override for this bin-size variant)")
-            return
-        effective_ds = override[dataset_name]
-    else:
-        base_ds = dataset_cfg["loader_kwargs"]["downsample_factor"]
-        if isinstance(base_ds, str):
-            effective_ds = base_ds  # e.g. 'auto' — resolved by occupancy inside the loader
-        else:
-            effective_ds = max(1, round(base_ds * variant_spec.get("downsample_scale", 1.0)))
-    loader_kwargs = {**dataset_cfg["loader_kwargs"], "downsample_factor": effective_ds}
-
-    print(f"  Loading {dataset_name} data (downsample_factor={effective_ds})...")
-    binned_spikes, true_conn, neuron_names = dataset_cfg["loader"](**loader_kwargs)
+    print(f"  Loading {dataset_name} data...")
+    binned_spikes, true_conn, neuron_names = dataset_cfg["loader"](**dataset_cfg["loader_kwargs"])
     num_channels, num_time = binned_spikes.shape
     spike_tensor = torch.tensor(binned_spikes, dtype=torch.float32)
     criterion = make_criterion(spike_tensor, device)
@@ -440,10 +189,8 @@ def run_dataset_variant(
             batch_size=vcfg.get("batch_size", 16),
             num_epochs=vcfg.get("num_epochs", dataset_cfg["num_epochs"]),
             lr=vcfg.get("lr", 1e-4),
-            l1_lambda=vcfg.get("l1_lambda", 7.5),
+            log_sum_penalty_lambda=vcfg.get("log_sum_penalty_lambda", 2.0),
             competitive_lambda=vcfg.get("competitive_lambda", 15.0),
-            indirect_lambda=vcfg.get("indirect_lambda", 0.0),
-            model_type=vcfg.get("model_type", "standard"),
             device=str(device),
             seed=run_idx,
             output_dir=str(output_dir),
@@ -475,8 +222,6 @@ def run_dataset_variant(
             plot_mdp_matrix(learned_A, neuron_names, method_name=f"GNN {run_idx}", save_dir=str(output_dir))
         elif dataset_name == 'v1_v2':
             plot_v1_v2_matrix(learned_A, neuron_names, method_name=f"GNN {run_idx}", save_dir=str(output_dir))
-        elif dataset_name == 'hc3':
-            plot_hc3_matrix(learned_A, neuron_names, method_name=f"GNN {run_idx}", save_dir=str(output_dir))
         else:
             plot_connectivity_matrix(learned_A, neuron_names=neuron_names,
                                      method_name=f"GNN {run_idx}", save_dir=str(output_dir))

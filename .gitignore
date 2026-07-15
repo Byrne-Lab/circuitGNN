@@ -18,4 +18,9 @@ encoder_interpretability*.py
 plot_variant_distribution.py
 analyze_interpretable.py    
 results*
-relevant_files
+hc3_documents
+random*
+version_*
+AttentionGNN
+run_allen.py
+run_hc3*

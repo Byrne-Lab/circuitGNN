@@ -41,50 +41,35 @@ def make_saturated_rdbu(cut=0.15):
     ])
     return LinearSegmentedColormap.from_list("RdBu_saturated", colors)
 
-"""
-def plot_connectivity_matrix(matrix, neuron_names, method_name='GNN', cmap=sns.diverging_palette(240, 10, as_cmap=True), save_dir='benchmarking_results', plot_val=True):
-    os.makedirs(save_dir, exist_ok=True)
-    vmin, vmax = matrix.min(), matrix.max()
-    vmin = min(matrix.min(), -1e-6)
-    vmax = max(matrix.max(),  1e-6)
 
-    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
-    plt.figure(figsize=(10, 8))
-    if plot_val:
-        sns.heatmap(matrix, xticklabels=neuron_names, yticklabels=neuron_names, cmap=cmap, norm=norm, cbar_kws={'label': 'Connectivity Strength'}, square=True, annot=True, fmt=".3f")
+def plot_connectivity_matrix(matrix, neuron_names, method_name='GNN', cmap=None, save_dir='benchmarking_results', plot_val=True):
+    os.makedirs(save_dir, exist_ok=True)
+
+    all_nonneg = matrix.min() >= 0
+    if all_nonneg:
+        plot_norm = plt.Normalize(vmin=0, vmax=max(matrix.max(), 1e-6))
+        plot_cmap = copy.copy(plt.cm.Greys) if cmap is None else copy.copy(cmap)
     else:
-        sns.heatmap(matrix, xticklabels=neuron_names, yticklabels=neuron_names, cmap=cmap, norm=norm, cbar_kws={'label': 'Connectivity Strength'}, square=True)
-    plt.title(f"{method_name} Connectivity Matrix")
-    plt.xlabel("Postsynaptic neuron")
-    plt.ylabel("Presynaptic neuron")
-    plt.tight_layout()
-    save_path = os.path.join(save_dir, f"{method_name.replace(' ', '_').lower()}.pdf")
-    plt.savefig(save_path, format='pdf')
-    plt.close()
-"""
-
-def plot_connectivity_matrix(matrix, neuron_names, method_name='GNN', cmap=sns.diverging_palette(240, 10, as_cmap=True), save_dir='benchmarking_results', plot_val=True):
-    os.makedirs(save_dir, exist_ok=True)
-    vmin = min(matrix.min(), -1e-6)
-    vmax = max(matrix.max(),  1e-6)
-    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+        vmin = min(matrix.min(), -1e-6)
+        vmax = max(matrix.max(),  1e-6)
+        plot_norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+        plot_cmap = copy.copy(sns.diverging_palette(240, 10, as_cmap=True)) if cmap is None else copy.copy(cmap)
 
     # Mask exact zeros so they render as white
-    cmap = copy.copy(cmap)          # avoid mutating the default argument
-    cmap.set_bad(color='white')
+    plot_cmap.set_bad(color='white')
     masked_matrix = np.ma.masked_where(matrix == 0, matrix)
 
     plt.figure(figsize=(10, 8))
     if plot_val:
         # Build annotation array: empty string where value is 0
-        annot_labels = np.where(matrix == 0, '', 
+        annot_labels = np.where(matrix == 0, '',
                                 np.vectorize(lambda v: f"{v:.3f}")(matrix))
         sns.heatmap(masked_matrix, xticklabels=neuron_names, yticklabels=neuron_names,
-                    cmap=cmap, norm=norm, cbar_kws={'label': 'Connectivity Strength'},
+                    cmap=plot_cmap, norm=plot_norm, cbar_kws={'label': 'Connectivity Strength'},
                     square=True, annot=annot_labels, fmt='')   # fmt='' because values are already strings
     else:
         sns.heatmap(masked_matrix, xticklabels=neuron_names, yticklabels=neuron_names,
-                    cmap=cmap, norm=norm, cbar_kws={'label': 'Connectivity Strength'},
+                    cmap=plot_cmap, norm=plot_norm, cbar_kws={'label': 'Connectivity Strength'},
                     square=True)
 
     plt.title(f"{method_name} Connectivity Matrix")
@@ -140,9 +125,9 @@ def plot_pdcm_matrix(matrix, pop_labels, method_name='GNN', save_dir='results'):
     plt.close()
 
 
-V1_POPS_ORDERED = ['23E', '23I', '4E', '4I', '5E', '5I', '6E', '6I']
+MDP_POPS_ORDERED = ['23E', '23I', '4E', '4I', '5E', '5I', '6E', '6I']
 
-def plot_v1_matrix(matrix, neuron_names, method_name='GNN', save_dir='results'):
+def plot_mdp_matrix(matrix, neuron_names, method_name='GNN', save_dir='results'):
     os.makedirs(save_dir, exist_ok=True)
     cmap = sns.diverging_palette(240, 10, as_cmap=True)
     vmin = min(matrix.min(), -1e-6)
@@ -158,7 +143,7 @@ def plot_v1_matrix(matrix, neuron_names, method_name='GNN', save_dir='results'):
 
     boundaries, tick_centers, tick_labels = [], [], []
     cursor = 0
-    for pop in V1_POPS_ORDERED:
+    for pop in MDP_POPS_ORDERED:
         count = sum(1 for name in neuron_names if name == pop)
         if count == 0:
             continue
@@ -174,6 +159,53 @@ def plot_v1_matrix(matrix, neuron_names, method_name='GNN', save_dir='results'):
         ax.axvline(b, color='k', linewidth=0.5)
     ax.set_xticks(tick_centers); ax.set_xticklabels(tick_labels, fontsize=8)
     ax.set_yticks(tick_centers); ax.set_yticklabels(tick_labels, fontsize=8, rotation=0)
+
+    plt.title(f'{method_name} Connectivity Matrix')
+    plt.xlabel('Postsynaptic')
+    plt.ylabel('Presynaptic')
+    plt.tight_layout()
+    save_path = os.path.join(save_dir, f"{method_name.replace(' ', '_').lower()}.pdf")
+    plt.savefig(save_path, format='pdf')
+    plt.close()
+
+
+def plot_hc3_matrix(matrix, neuron_names, method_name='GNN', save_dir='results'):
+    """Heatmap of the learned adjacency for a CRCNS hc-3 session.
+
+    Each neuron is labelled individually by its name tag
+    ('<region>_<ctype>_e<ele>c<clu>'); thin black lines separate the brain-region
+    blocks (the loader orders units by region, so blocks are contiguous). There is
+    no ground-truth connectivity for in-vivo data, so this only shows the learned A.
+    """
+    os.makedirs(save_dir, exist_ok=True)
+    cmap = sns.diverging_palette(240, 10, as_cmap=True)
+    vmin = min(matrix.min(), -1e-6)
+    vmax = max(matrix.max(),  1e-6)
+    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(matrix,
+                xticklabels=neuron_names, yticklabels=neuron_names,
+                cmap=cmap, norm=norm,
+                cbar_kws={'label': 'Connection strength'},
+                square=True)
+    plt.xticks(fontsize=5)
+    plt.yticks(fontsize=5)
+
+    # thin black lines separating brain-region blocks (contiguous in loader order)
+    ax = plt.gca()
+    regions = [name.split('_')[0] for name in neuron_names]
+    boundaries, cursor, i = [0], 0, 0
+    while i < len(regions):
+        j = i
+        while j < len(regions) and regions[j] == regions[i]:
+            j += 1
+        cursor += j - i
+        boundaries.append(cursor)
+        i = j
+    for b in boundaries:
+        ax.axhline(b, color='k', linewidth=0.5)
+        ax.axvline(b, color='k', linewidth=0.5)
 
     plt.title(f'{method_name} Connectivity Matrix')
     plt.xlabel('Postsynaptic')
@@ -242,7 +274,7 @@ def calculate_fit(true_conn, learned_conn, plot=True):
                     (tn_signed + fp_signed) * (tn_signed + fn_signed))
     mcc_signed = (tp_signed * tn_signed - fp_signed * fn_signed) / denom if denom > 0 else 0.0
 
-    # ── plot ─────────────────────────────────────────────────────────────────
+    # plot
     if plot:
         # classification maps
         clf_map  = np.full((n, n), np.nan)
@@ -321,6 +353,77 @@ def calculate_fit(true_conn, learned_conn, plot=True):
         signed_precision=signed_precision, signed_recall=signed_recall, signed_f1=signed_f1,
         mcc_unsigned=mcc_unsigned, mcc_signed=mcc_signed, auroc=auroc, nie=nie,
     )
+
+
+def plot_v1_v2_matrix(matrix, neuron_names, method_name='GNN', save_dir='results'):
+    """Plot a V1+V2 two-area connectivity matrix.
+
+    Neurons are grouped area-by-area then population-by-population, so the matrix
+    shows four blocks (V1->V1, V2->V1, V1->V2, V2->V2). Thin lines separate
+    populations; thick lines separate the two areas. ``neuron_names`` are
+    area-qualified labels such as 'V1_23E', 'V2_4I'.
+    """
+    # Defined inside the function so it stays self-contained when copied to other repos
+    areas = ['V1', 'V2']
+    pop_order = ['23E', '23I', '4E', '4I', '5E', '5I', '6E', '6I']
+
+    os.makedirs(save_dir, exist_ok=True)
+    cmap = sns.diverging_palette(240, 10, as_cmap=True)
+    vmin = min(matrix.min(), -1e-6)
+    vmax = max(matrix.max(),  1e-6)
+    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(matrix,
+                xticklabels=False, yticklabels=False,
+                cmap=cmap, norm=norm,
+                cbar_kws={'label': 'Connection strength'},
+                square=True)
+
+    # Ordered 'AREA_POP' blocks present in the data
+    block_labels = []
+    for area in areas:
+        for pop in pop_order:
+            label = f'{area}_{pop}'
+            if any(name == label for name in neuron_names):
+                block_labels.append(label)
+
+    # Thin population boundaries + tick labels
+    boundaries, tick_centers, tick_labels = [], [], []
+    cursor = 0
+    for label in block_labels:
+        count = sum(1 for name in neuron_names if name == label)
+        boundaries.append(cursor)
+        tick_centers.append(cursor + count / 2)
+        tick_labels.append(label)
+        cursor += count
+    boundaries.append(cursor)
+
+    ax = plt.gca()
+    for b in boundaries:
+        ax.axhline(b, color='k', linewidth=0.4, alpha=0.5)
+        ax.axvline(b, color='k', linewidth=0.4, alpha=0.5)
+
+    # Thick area boundaries
+    cursor = 0
+    for area in areas:
+        a_count = sum(1 for name in neuron_names if name.startswith(area + '_'))
+        if cursor > 0:
+            ax.axhline(cursor, color='k', linewidth=1.8)
+            ax.axvline(cursor, color='k', linewidth=1.8)
+        cursor += a_count
+
+    ax.set_xticks(tick_centers); ax.set_xticklabels(tick_labels, fontsize=6, rotation=90)
+    ax.set_yticks(tick_centers); ax.set_yticklabels(tick_labels, fontsize=6, rotation=0)
+
+    plt.title(f'{method_name} Connectivity Matrix')
+    plt.xlabel('Postsynaptic')
+    plt.ylabel('Presynaptic')
+    plt.tight_layout()
+    save_path = os.path.join(save_dir, f"{method_name.replace(' ', '_').lower()}.pdf")
+    plt.savefig(save_path, format='pdf')
+    plt.close()
+
 
 
 def _draw_confusion(ax, tp, fp, fn, tn, mcc, title):
@@ -486,7 +589,27 @@ def plot_metric_verification(true_conn, learned_conn, save_dir, method_name="con
     return save_path
 
 
-def align_matrices(adjacency_matrices, excitatory=True):
+def align_matrices(adjacency_matrices, bias=None, binned_spikes=None, gdi_sign=None, num_taus=3, ridge=1e-3):
+    if bias in ("excitatory", "inhibitory"):
+        return _align_matrices_legacy(adjacency_matrices, excitatory=(bias == "excitatory"))
+    if bias is not None:
+        raise ValueError(f"bias must be 'excitatory', 'inhibitory', or None; got {bias!r}")
+    # Pass a precomputed gdi_sign to skip robust_sign_inference (expensive) when
+    # aligning many run-sets that share the same spikes, e.g. a variant sweep.
+    if gdi_sign is None:
+        if binned_spikes is None:
+            raise ValueError(
+                "consensus alignment (bias=None) needs binned_spikes or a precomputed "
+                "gdi_sign; pass bias='excitatory'/'inhibitory' to use the legacy method."
+            )
+        gdi_sign = robust_sign_inference(binned_spikes, num_taus, ridge=ridge)
+    aligned, _ = consensus_flips(adjacency_matrices, gdi_sign)
+    return aligned
+
+
+def _align_matrices_legacy(adjacency_matrices, excitatory=True):
+    """Legacy sign alignment: flip each run toward a reference matrix, orienting the
+    whole cluster by assuming excitatory (or inhibitory) connections dominate."""
     excitation = 1 if np.sum(adjacency_matrices[0]) >= 0 else 0
     if (excitatory and not excitation) or (not excitatory and excitation):
         adjacency_matrices[0] = -adjacency_matrices[0]
@@ -500,6 +623,86 @@ def align_matrices(adjacency_matrices, excitatory=True):
         if cos_sim_rev > cos_sim_reg:
             adjacency_matrices[i] = -current_matrix
     return adjacency_matrices
+
+
+def robust_sign_inference(binned_spikes, num_taus=3, ridge=1e-3):
+    # GDI sign per edge (partial-correlation sign at best lag), robust on large N.
+    # Silent (zero-variance) neurons are dropped (their edges stay sign 0)
+    # Ridge keeps the correlation invertible even when it is singular/collinear 
+
+    def _partial_corr(X):
+        corr = np.nan_to_num(np.corrcoef(X.T), nan=0.0)
+        np.fill_diagonal(corr, 1.0)
+        prec = np.linalg.inv(corr + ridge * np.eye(corr.shape[0]))
+        d = np.diag(prec)
+        return -prec / np.sqrt(np.outer(d, d))
+
+    N = binned_spikes.shape[0]
+    active = np.where(binned_spikes.std(axis=1) > 0)[0]
+    gdi = np.zeros((N, N))
+    if len(active) < N:
+        print(f"sign inference: dropped {N - len(active)} silent neurons, "
+              f"{len(active)} active (ridge={ridge}).")
+    if len(active) < 2:
+        return gdi
+
+    X = binned_spikes[active].T
+    C = X.shape[1]
+    sign = np.zeros((C, C))
+    for j in range(C):
+        pcorr = np.zeros((C, num_taus))
+        for tt in range(num_taus):
+            Xs = X.copy()
+            Xs[:-(tt + 1), j] = Xs[tt + 1:, j]
+            pcorr[:, tt] = _partial_corr(Xs[:-(tt + 1), :])[:, j]
+        best = pcorr[np.arange(C), np.argmax(np.abs(pcorr), axis=1)]  # value at max-|lag|
+        sign[:, j] = np.sign(best)
+    gdi[np.ix_(active, active)] = sign
+    return gdi
+
+
+def _cosine_offdiag(a, b):
+    # Off-diagonal cosine similarity
+    v1, v2 = a[~np.eye(a.shape[0], dtype=bool)], b[~np.eye(b.shape[0], dtype=bool)]
+    denom = np.linalg.norm(v1) * np.linalg.norm(v2)
+    return float(np.dot(v1, v2) / denom) if denom > 0 else 0.0
+
+
+def consensus_flips(matrices, gdi_sign, max_iter=100):
+    # Fix each run's arbitrary global sign, then orient the whole cluster.
+
+    mats = [A.copy() for A in matrices]
+    n = len(mats)
+    flip = [False] * n
+
+    total = np.stack(mats).sum(axis=0)
+    for _ in range(max_iter):
+        changed = False
+        for i in range(n):
+            loo = (total - mats[i]) / max(n - 1, 1)  # mean of the other runs
+            if _cosine_offdiag(-mats[i], loo) > _cosine_offdiag(mats[i], loo):
+                total = total - 2 * mats[i]
+                mats[i] = -mats[i]
+                flip[i] = not flip[i]
+                changed = True
+        if not changed:
+            break
+
+    # global orientation
+    mean = np.stack(mats).mean(axis=0)
+    off = ~np.eye(mean.shape[0], dtype=bool)
+    cur, ref = np.sign(mean[off]), gdi_sign[off]
+    usable = (cur != 0) & (ref != 0)
+    if usable.sum() == 0:
+        flip_all = mean.sum() < 0  # excitatory-dominant fallback
+        print("Warning: gdi_sign gave no usable orientation edges; using excitatory fallback.")
+    else:
+        agree = np.sum(cur[usable] == ref[usable])
+        flip_all = agree < usable.sum() - agree
+    if flip_all:
+        mats = [-A for A in mats]
+        flip = [not f for f in flip]
+    return mats, flip
 
 
 def scale_ablation(A, ablation_matrix):
@@ -591,201 +794,3 @@ def sign_inference(X,M):
 
     # RETURN CORR & PCORR SIGNS
     return X_pcorr_sign, X_corr_sign
-
-
-def plot_mdp_matrix(matrix, neuron_names, method_name='GNN', save_dir='results'):
-    pop_order = ['23E', '23I', '4E', '4I', '5E', '5I', '6E', '6I']
-    os.makedirs(save_dir, exist_ok=True)
-    cmap = sns.diverging_palette(240, 10, as_cmap=True)
-    vmin = min(matrix.min(), -1e-6)
-    vmax = max(matrix.max(),  1e-6)
-    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
-
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(matrix,
-                xticklabels=False, yticklabels=False,
-                cmap=cmap, norm=norm,
-                cbar_kws={'label': 'Connection strength'},
-                square=True)
-
-    boundaries, tick_centers, tick_labels = [], [], []
-    cursor = 0
-    for pop in pop_order:
-        count = sum(1 for name in neuron_names if name == pop)
-        if count == 0:
-            continue
-        boundaries.append(cursor)
-        tick_centers.append(cursor + count / 2)
-        tick_labels.append(pop)
-        cursor += count
-    boundaries.append(cursor)
-
-    ax = plt.gca()
-    for b in boundaries:
-        ax.axhline(b, color='k', linewidth=0.5)
-        ax.axvline(b, color='k', linewidth=0.5)
-    ax.set_xticks(tick_centers); ax.set_xticklabels(tick_labels, fontsize=8)
-    ax.set_yticks(tick_centers); ax.set_yticklabels(tick_labels, fontsize=8, rotation=0)
-
-    plt.title(f'{method_name} Connectivity Matrix')
-    plt.xlabel('Postsynaptic')
-    plt.ylabel('Presynaptic')
-    plt.tight_layout()
-    save_path = os.path.join(save_dir, f"{method_name.replace(' ', '_').lower()}.pdf")
-    plt.savefig(save_path, format='pdf')
-    plt.close()
-
-
-def plot_v1_v2_matrix(matrix, neuron_names, method_name='GNN', save_dir='results'):
-    """Plot a V1+V2 two-area connectivity matrix.
-
-    Neurons are grouped area-by-area then population-by-population, so the matrix
-    shows four blocks (V1->V1, V2->V1, V1->V2, V2->V2). Thin lines separate
-    populations; thick lines separate the two areas. ``neuron_names`` are
-    area-qualified labels such as 'V1_23E', 'V2_4I'.
-    """
-    areas = ['V1', 'V2']
-    pop_order = ['23E', '23I', '4E', '4I', '5E', '5I', '6E', '6I']
-
-    os.makedirs(save_dir, exist_ok=True)
-    cmap = sns.diverging_palette(240, 10, as_cmap=True)
-    vmin = min(matrix.min(), -1e-6)
-    vmax = max(matrix.max(),  1e-6)
-    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
-
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(matrix,
-                xticklabels=False, yticklabels=False,
-                cmap=cmap, norm=norm,
-                cbar_kws={'label': 'Connection strength'},
-                square=True)
-
-    # Ordered 'AREA_POP' blocks present in the data
-    block_labels = []
-    for area in areas:
-        for pop in pop_order:
-            label = f'{area}_{pop}'
-            if any(name == label for name in neuron_names):
-                block_labels.append(label)
-
-    # Thin population boundaries + tick labels
-    boundaries, tick_centers, tick_labels = [], [], []
-    cursor = 0
-    for label in block_labels:
-        count = sum(1 for name in neuron_names if name == label)
-        boundaries.append(cursor)
-        tick_centers.append(cursor + count / 2)
-        tick_labels.append(label)
-        cursor += count
-    boundaries.append(cursor)
-
-    ax = plt.gca()
-    for b in boundaries:
-        ax.axhline(b, color='k', linewidth=0.4, alpha=0.5)
-        ax.axvline(b, color='k', linewidth=0.4, alpha=0.5)
-
-    # Thick area boundaries
-    cursor = 0
-    for area in areas:
-        a_count = sum(1 for name in neuron_names if name.startswith(area + '_'))
-        if cursor > 0:
-            ax.axhline(cursor, color='k', linewidth=1.8)
-            ax.axvline(cursor, color='k', linewidth=1.8)
-        cursor += a_count
-
-    ax.set_xticks(tick_centers); ax.set_xticklabels(tick_labels, fontsize=6, rotation=90)
-    ax.set_yticks(tick_centers); ax.set_yticklabels(tick_labels, fontsize=6, rotation=0)
-
-    plt.title(f'{method_name} Connectivity Matrix')
-    plt.xlabel('Postsynaptic')
-    plt.ylabel('Presynaptic')
-    plt.tight_layout()
-    save_path = os.path.join(save_dir, f"{method_name.replace(' ', '_').lower()}.pdf")
-    plt.savefig(save_path, format='pdf')
-    plt.close()
-
-
-def plot_hc3_matrix(matrix, neuron_names, method_name='GNN', save_dir='results'):
-    """Heatmap of the learned adjacency for a CRCNS hc-3 session, grouped into
-    brain-region blocks with putative E/I cell types marked along both axes.
-
-    ``neuron_names`` are '<region>_<ctype>_e<ele>c<clu>' and the loader orders
-    units by region then cell type, so region blocks are contiguous. There is no
-    ground-truth connectivity for in-vivo data, so this only shows the learned A;
-    the 'p'/'i'/'n' cell-type tag is the reference (Kobayashi et al.).
-    """
-    from matplotlib.patches import Rectangle, Patch
-
-    os.makedirs(save_dir, exist_ok=True)
-    cmap = sns.diverging_palette(240, 10, as_cmap=True)
-    vmin = min(matrix.min(), -1e-6)
-    vmax = max(matrix.max(),  1e-6)
-    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
-
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(matrix,
-                xticklabels=False, yticklabels=False,
-                cmap=cmap, norm=norm,
-                cbar_kws={'label': 'Connection strength'},
-                square=True)
-
-    ax = plt.gca()
-    n = len(neuron_names)
-    regions = [name.split('_')[0] for name in neuron_names]
-    ctypes  = [name.split('_')[1] if len(name.split('_')) > 1 else 'n'
-               for name in neuron_names]
-
-    def contiguous_runs(seq):               # (start, length, value) per contiguous run
-        runs, i = [], 0
-        while i < len(seq):
-            j = i
-            while j < len(seq) and seq[j] == seq[i]:
-                j += 1
-            runs.append((i, j - i, seq[i]))
-            i = j
-        return runs
-
-    # region blocks: boundary lines (loader orders units by region, so contiguous)
-    region_runs = contiguous_runs(regions)
-    for b in [0] + [start + length for start, length, _ in region_runs]:
-        ax.axhline(b, color='k', linewidth=0.5)
-        ax.axvline(b, color='k', linewidth=0.5)
-    # postsynaptic (columns) region labels along the bottom
-    region_centers = [start + length / 2 for start, length, _ in region_runs]
-    region_names   = [name for _, _, name in region_runs]
-    ax.set_xticks(region_centers); ax.set_xticklabels(region_names, fontsize=8)
-
-    # Cell-type color strips: mark each unit's putative excitatory (pyramidal, 'p')
-    # vs inhibitory (interneuron, 'i') identity from its name tag. No ground-truth
-    # connectivity exists in vivo, so this E/I label is the reference.
-    type_color = {'p': '#c44e52', 'i': '#4c72b0', 'n': '#cfcfcf'}
-    type_label = {'p': 'Excitatory (pyramidal)',
-                  'i': 'Inhibitory (interneuron)',
-                  'n': 'Unclassified'}
-    strip = max(0.8, n * 0.02)              # strip thickness, in matrix-cell units
-    for start, length, ct in contiguous_runs(ctypes):
-        color = type_color.get(ct, type_color['n'])
-        ax.add_patch(Rectangle((-strip, start), strip, length,   # rows -> left edge
-                               facecolor=color, edgecolor='none', clip_on=False, zorder=5))
-        ax.add_patch(Rectangle((start, -strip), length, strip,   # cols -> top edge
-                               facecolor=color, edgecolor='none', clip_on=False, zorder=5))
-
-    # presynaptic (row) region labels sit outside the left color strip
-    ax.set_yticks([])
-    for start, length, name in region_runs:
-        ax.text(-strip - 0.5, start + length / 2, name,
-                ha='right', va='center', fontsize=8)
-
-    present = [ct for ct in ('p', 'i', 'n') if ct in ctypes]
-    handles = [Patch(facecolor=type_color[ct], label=type_label[ct]) for ct in present]
-    ax.legend(handles=handles, title='Cell type', ncol=len(handles),
-              loc='upper center', bbox_to_anchor=(0.5, -0.11),
-              fontsize=8, title_fontsize=8, frameon=False)
-
-    plt.title(f'{method_name} Connectivity Matrix')
-    plt.xlabel('Postsynaptic')
-    plt.ylabel('Presynaptic', labelpad=20)
-    plt.tight_layout()
-    save_path = os.path.join(save_dir, f"{method_name.replace(' ', '_').lower()}.pdf")
-    plt.savefig(save_path, format='pdf', bbox_inches='tight')
-    plt.close()
