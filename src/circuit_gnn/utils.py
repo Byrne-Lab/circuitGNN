@@ -42,18 +42,13 @@ def make_saturated_rdbu(cut=0.15):
     return LinearSegmentedColormap.from_list("RdBu_saturated", colors)
 
 
-def plot_connectivity_matrix(matrix, neuron_names, method_name='GNN', cmap=None, save_dir='benchmarking_results', plot_val=True):
+def plot_connectivity_matrix(matrix, neuron_names, method_name='GNN', cmap=None, save_dir='benchmarking_results', plot_val=True, vmin=None, vmax=None):
     os.makedirs(save_dir, exist_ok=True)
 
-    all_nonneg = matrix.min() >= 0
-    if all_nonneg:
-        plot_norm = plt.Normalize(vmin=0, vmax=max(matrix.max(), 1e-6))
-        plot_cmap = copy.copy(plt.cm.Greys) if cmap is None else copy.copy(cmap)
-    else:
-        vmin = min(matrix.min(), -1e-6)
-        vmax = max(matrix.max(),  1e-6)
-        plot_norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
-        plot_cmap = copy.copy(sns.diverging_palette(240, 10, as_cmap=True)) if cmap is None else copy.copy(cmap)
+    vmin = min(matrix.min(), -1e-6) if vmin is None else vmin
+    vmax = max(matrix.max(),  1e-6) if vmax is None else vmax
+    plot_norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+    plot_cmap = copy.copy(sns.diverging_palette(240, 10, as_cmap=True)) if cmap is None else copy.copy(cmap)
 
     # Mask exact zeros so they render as white
     plot_cmap.set_bad(color='white')
@@ -590,20 +585,15 @@ def plot_metric_verification(true_conn, learned_conn, save_dir, method_name="con
 
 
 def align_matrices(adjacency_matrices, bias=None, binned_spikes=None, gdi_sign=None, num_taus=3, ridge=1e-3):
-    if bias in ("excitatory", "inhibitory"):
-        return _align_matrices_legacy(adjacency_matrices, excitatory=(bias == "excitatory"))
     if bias is not None:
-        raise ValueError(f"bias must be 'excitatory', 'inhibitory', or None; got {bias!r}")
-    # Pass a precomputed gdi_sign to skip robust_sign_inference (expensive) when
-    # aligning many run-sets that share the same spikes, e.g. a variant sweep.
-    if gdi_sign is None:
-        if binned_spikes is None:
-            raise ValueError(
-                "consensus alignment (bias=None) needs binned_spikes or a precomputed "
-                "gdi_sign; pass bias='excitatory'/'inhibitory' to use the legacy method."
-            )
+        b = bias.lower()
+        if b not in ("excitatory", "inhibitory"):
+            raise ValueError(f"bias must be 'excitatory', 'inhibitory', or None; got {bias!r}")
+        return _align_matrices_legacy(adjacency_matrices, excitatory=(b == "excitatory"))
+
+    if gdi_sign is None: # pass a precomputed gdi_sign to skip robust_sign_inference
         gdi_sign = robust_sign_inference(binned_spikes, num_taus, ridge=ridge)
-    aligned, _ = consensus_flips(adjacency_matrices, gdi_sign)
+    aligned, _ = orient_runs(adjacency_matrices, gdi_sign)
     return aligned
 
 
@@ -624,10 +614,10 @@ def _align_matrices_legacy(adjacency_matrices, excitatory=True):
             adjacency_matrices[i] = -current_matrix
     return adjacency_matrices
 
-
+# Adapted from Young et al. (2021)
 def robust_sign_inference(binned_spikes, num_taus=3, ridge=1e-3):
     # GDI sign per edge (partial-correlation sign at best lag), robust on large N.
-    # Silent (zero-variance) neurons are dropped (their edges stay sign 0)
+    # Zero-variance (silent) neurons are dropped (edges = 0)
     # Ridge keeps the correlation invertible even when it is singular/collinear 
 
     def _partial_corr(X):
@@ -668,37 +658,30 @@ def _cosine_offdiag(a, b):
     return float(np.dot(v1, v2) / denom) if denom > 0 else 0.0
 
 
-def consensus_flips(matrices, gdi_sign, max_iter=100):
-    # Fix each run's arbitrary global sign, then orient the whole cluster.
+def orient_runs(matrices, gdi_sign, reference_idx=0):
+    # Fix each run's arbitrary global sign by aligning to a reference run
 
     mats = [A.copy() for A in matrices]
     n = len(mats)
     flip = [False] * n
 
-    total = np.stack(mats).sum(axis=0)
-    for _ in range(max_iter):
-        changed = False
-        for i in range(n):
-            loo = (total - mats[i]) / max(n - 1, 1)  # mean of the other runs
-            if _cosine_offdiag(-mats[i], loo) > _cosine_offdiag(mats[i], loo):
-                total = total - 2 * mats[i]
-                mats[i] = -mats[i]
-                flip[i] = not flip[i]
-                changed = True
-        if not changed:
-            break
+    ref = mats[reference_idx]
+    for i in range(n):
+        if i == reference_idx:
+            continue
+        if _cosine_offdiag(-mats[i], ref) > _cosine_offdiag(mats[i], ref):
+            mats[i] = -mats[i]
+            flip[i] = True
 
     # global orientation
     mean = np.stack(mats).mean(axis=0)
     off = ~np.eye(mean.shape[0], dtype=bool)
-    cur, ref = np.sign(mean[off]), gdi_sign[off]
-    usable = (cur != 0) & (ref != 0)
-    if usable.sum() == 0:
+    score = np.sum(mean[off] * gdi_sign[off])
+    if score == 0:
         flip_all = mean.sum() < 0  # excitatory-dominant fallback
         print("Warning: gdi_sign gave no usable orientation edges; using excitatory fallback.")
     else:
-        agree = np.sum(cur[usable] == ref[usable])
-        flip_all = agree < usable.sum() - agree
+        flip_all = score < 0
     if flip_all:
         mats = [-A for A in mats]
         flip = [not f for f in flip]
@@ -736,61 +719,3 @@ def get_top_k(A, k_val=0.1):
     top_k_A = A * top_k_mask
 
     return top_k_A
-
-
-# From Young et al. 2021
-def partial_corr(X):
-
-    # COMPUTE CORRELATION COEFFICIENT MATRIX
-    corr_matrix = np.corrcoef(X.T)
-
-    # COMPUTE PRECISION MATRIX
-    precision_matrix = np.linalg.inv(corr_matrix)
-
-    # NORMALIZE PRECISION MATRIX BY DIAGONAL VALUES TO GET PARTIAL CORRELATIONS
-    precision_matrix_diagonal = np.diag(precision_matrix)
-    precision_col = matlib.repmat(precision_matrix_diagonal,corr_matrix.shape[0],1)
-    precision_row = precision_col.T
-    normalization_matrix = np.sqrt(precision_row*precision_col)
-    partial_corr_matrix = -precision_matrix/normalization_matrix
-
-    # RETURN PARTIAL & REGULAR CORRELATION MATRICES
-    return partial_corr_matrix, corr_matrix
-
-
-def sign_inference(X,M):
-
-    # MAKE SURE INTEGERS
-    M = int(M)
-
-    # PARAMETER(S)
-    num_channels = X.shape[1]
-
-    # LOOP THROUGH TAUS & CHANNELS
-    X_pcorr_sign  = np.zeros((num_channels,num_channels))
-    X_corr_sign   = np.zeros((num_channels,num_channels))
-    current_pcorr = np.zeros((num_channels,num_channels,M))
-    current_corr  = np.zeros((num_channels,num_channels,M))
-    for chan2 in range(num_channels):
-        for tt in range(M):
-            X_copy = copy.deepcopy(X)
-            X_copy[:(-(tt+1)),chan2] = X_copy[(tt+1):,chan2]
-            X_copy = X_copy[:(-(tt+1)),:]
-            current_pcorr[:,:,tt], current_corr[:,:,tt] = partial_corr(X_copy)
-        # EXTRACT RELEVANT COLUMN
-        current_pcorr_col = np.squeeze(current_pcorr[:,chan2,:])
-        current_corr_col  = np.squeeze(current_corr[:,chan2,:])
-
-        # TAKE MAX ABS VAL ACROSS TAUS
-        max_pcorr_val = np.zeros((num_channels,))
-        max_corr_val  = np.zeros((num_channels,))
-        for chan1 in range(num_channels):
-            max_pcorr_val[chan1] = current_pcorr_col[chan1,np.argmax(np.absolute(current_pcorr_col[chan1,:]))]
-            max_corr_val[chan1]  = current_corr_col[chan1,np.argmax(np.absolute(current_corr_col[chan1,:]))]
-
-        # TAKE SIGN AT LOWEST LAG THAT WAS FOUND TO PRODUCE MAX ABS VAL
-        X_pcorr_sign[:,chan2] = np.sign(max_pcorr_val)
-        X_corr_sign[:,chan2]  = np.sign(max_corr_val)
-
-    # RETURN CORR & PCORR SIGNS
-    return X_pcorr_sign, X_corr_sign

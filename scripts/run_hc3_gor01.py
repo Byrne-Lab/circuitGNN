@@ -10,7 +10,7 @@ from circuit_gnn.utils import plot_hc3_matrix
 
 
 def main():
-    cfg = RunConfig(num_runs=5, num_epochs=20, downsample_factor=3)
+    cfg = RunConfig(num_runs=5, num_epochs=20)
 
     def plot_fn(learned_A, run_idx, save_dir, neuron_names):
         plot_hc3_matrix(learned_A, neuron_names, method_name=f"gnn_{run_idx}", save_dir=save_dir)

@@ -603,7 +603,7 @@ def align_matrices(adjacency_matrices, bias=None, binned_spikes=None, gdi_sign=N
                 "gdi_sign; pass bias='excitatory'/'inhibitory' to use the legacy method."
             )
         gdi_sign = robust_sign_inference(binned_spikes, num_taus, ridge=ridge)
-    aligned, _ = consensus_flips(adjacency_matrices, gdi_sign)
+    aligned, _ = orient_runs(adjacency_matrices, gdi_sign)
     return aligned
 
 
@@ -668,37 +668,32 @@ def _cosine_offdiag(a, b):
     return float(np.dot(v1, v2) / denom) if denom > 0 else 0.0
 
 
-def consensus_flips(matrices, gdi_sign, max_iter=100):
-    # Fix each run's arbitrary global sign, then orient the whole cluster.
+def orient_runs(matrices, gdi_sign, reference_idx=0):
+    # Fix each run's global sign by aligning to first run, then orient all runs
 
     mats = [A.copy() for A in matrices]
     n = len(mats)
     flip = [False] * n
 
-    total = np.stack(mats).sum(axis=0)
-    for _ in range(max_iter):
-        changed = False
-        for i in range(n):
-            loo = (total - mats[i]) / max(n - 1, 1)  # mean of the other runs
-            if _cosine_offdiag(-mats[i], loo) > _cosine_offdiag(mats[i], loo):
-                total = total - 2 * mats[i]
-                mats[i] = -mats[i]
-                flip[i] = not flip[i]
-                changed = True
-        if not changed:
-            break
+    ref = mats[reference_idx]
+    for i in range(n):
+        if i == reference_idx:
+            continue
+        if _cosine_offdiag(-mats[i], ref) > _cosine_offdiag(mats[i], ref):
+            mats[i] = -mats[i]
+            flip[i] = True
 
     # global orientation
     mean = np.stack(mats).mean(axis=0)
     off = ~np.eye(mean.shape[0], dtype=bool)
-    cur, ref = np.sign(mean[off]), gdi_sign[off]
-    usable = (cur != 0) & (ref != 0)
-    if usable.sum() == 0:
+    # Magnitude-weighted vote: strong, confident edges dominate the orientation
+    # so it doesn't hinge on a knife-edge count over many tiny, noisy edges.
+    score = np.sum(mean[off] * gdi_sign[off])
+    if score == 0:
         flip_all = mean.sum() < 0  # excitatory-dominant fallback
         print("Warning: gdi_sign gave no usable orientation edges; using excitatory fallback.")
     else:
-        agree = np.sum(cur[usable] == ref[usable])
-        flip_all = agree < usable.sum() - agree
+        flip_all = score < 0
     if flip_all:
         mats = [-A for A in mats]
         flip = [not f for f in flip]

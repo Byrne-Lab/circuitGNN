@@ -8,7 +8,7 @@ class SpikeEncoder(nn.Module):
 
     def __init__(self, window_size, num_neurons, firing_rates=None,
                  conv_out_channels=32, embedding_dim=64, kernel_size=3,
-                 mem_dim=16, eps=1e-3):
+                 mem_dim=32, eps=1e-3):
         # window_size: number of time steps in window
         # num_neurons: needed for the per-neuron rate stats and memory table
         # firing_rates: (num_neurons,) mean spikes/bin

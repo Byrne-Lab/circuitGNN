@@ -30,7 +30,7 @@ class RunConfig:
     hidden_dim: int = 64
     num_layers: int = 5
     output_dim: int = 1
-    mem_dim: int = 16          # width of each neuron's persistent memory slot
+    mem_dim: int = 32          # width of each neuron's persistent memory slot
     eps: float = 1e-3          # Poisson-scale floor for the encoder's rate normalization
 
 

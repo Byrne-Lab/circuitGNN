@@ -1,5 +1,4 @@
 import json
-
 import scipy.io as sio
 import matplotlib.pyplot as plt
 import numpy as np
@@ -88,6 +87,9 @@ def load_arbitrary_network(downsample_factor = 'auto', gap=-1, step=-1):
     print("Binned spikes possibilities:", np.unique(binned_spikes))
 
     true_conn = np.zeros((num_neurons,num_neurons))
+    
+    # From Young et al. script
+    """    
     true_conn[5,0]  = 1
     true_conn[5,2]  = 1
     true_conn[5,4]  = -1
@@ -101,6 +103,20 @@ def load_arbitrary_network(downsample_factor = 'auto', gap=-1, step=-1):
 
     true_conn[0,3]  = 1
     true_conn[3,10] = 1
+    """
+    # From SNNAP conductances
+    true_conn[0, 3]  =  0.75   # N1 -> N4
+    true_conn[2, 9]  =  1.25   # N3 -> N10
+    true_conn[3, 10] =  0.70   # N4 -> N11
+    true_conn[4, 9]  =  1.25   # N5 -> N10
+    true_conn[5, 0]  =  0.50   # N6 -> N1
+    true_conn[5, 1]  =  1.25   # N6 -> N2
+    true_conn[5, 2]  =  0.50   # N6 -> N3
+    true_conn[5, 4]  = -4.00   # N6 -> N5
+    true_conn[7, 1]  = -4.00   # N8 -> N2
+    true_conn[8, 1]  =  1.25   # N9 -> N2
+    true_conn = true_conn / np.abs(true_conn).max()
+
 
     neuron_names = np.arange(num_neurons)
 
@@ -118,9 +134,7 @@ def load_arbitrary_network(downsample_factor = 'auto', gap=-1, step=-1):
     plt.close()
 
     cmap = sns.diverging_palette(240, 10, as_cmap=True)
-    vmin = min(true_conn.min(), -1e-6)
-    vmax = max(true_conn.max(),  1e-6)
-    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+    norm = TwoSlopeNorm(vmin=-1, vcenter=0, vmax=0.4)
 
     # build annotation array: value if nonzero, else empty string
     annot_str = [[f'{v:.3f}' if v != 0 else '' for v in row] for row in true_conn]
@@ -129,7 +143,8 @@ def load_arbitrary_network(downsample_factor = 'auto', gap=-1, step=-1):
     sns.heatmap(true_conn, xticklabels=neuron_names, yticklabels=neuron_names,
                 cmap=cmap, norm=norm,
                 annot=annot_str, fmt='', annot_kws={'size': 5, 'color': 'black'},
-                cbar_kws={'label': 'Connection Strength (mV)'},
+                cbar_kws={'label': 'Connection Strength',
+                          'ticks': [-1.0, -0.5, 0.0, 0.2, 0.4]},
                 square=True)
     plt.title('True Connectivity')
     plt.xlabel('Postsynaptic')
@@ -457,31 +472,33 @@ def load_small_circuit_B_network(downsample_factor = 'auto', gap=0.20, step=1):
     return binned_spikes, true_conn, neuron_names
 
 
-def load_pdcm_network(downsample_factor='auto', gap=0, step=0):
-    """
-    Load the PDCM NetPyNE simulation dataset.
+def _load_pdcm_dir(data_dir, downsample_factor='auto', max_time_s=None, plot=True):
+    """Shared engine for every PDCM NetPyNE dataset (base, scaling sizes, large).
+
+    All PDCM datasets share an identical on-disk layout
+    (spkt/spkid/weight_matrix/pop_labels/sim_duration_ms), differing only in
+    neuron count and simulated duration, so binning/plotting lives here once.
 
     Parameters
     ----------
+    data_dir : str
+        Directory holding the .npy files (e.g. 'datasets/pdcm_0p010').
     downsample_factor : int or 'auto'
-        If 'auto' (default), the bin is chosen by signed-edge stability (see
-        circuit_gnn.optimal_bin_size); otherwise used as below.
-        Bin size in ms (e.g. 10 -> 10 ms bins)
-    gap : ignored
-        Kept for API compatibility with other loaders.
+        Bin size in ms, or 'auto' to pick it by signed-edge stability. For a
+        scaling sweep pass an explicit int so the bin is fixed across runs;
+        'auto' also materialises a 1 ms native array over the (possibly
+        truncated) recording, which is large for the big networks.
+    max_time_s : float or None
+        If set, keep only spikes in the first ``max_time_s`` seconds and treat
+        that as the simulated duration. Used to sweep recording length.
+    plot : bool
+        Write the raster / ground-truth PDFs. Turn off inside a replicate sweep
+        (the figures are identical across seeds and slow for large N).
 
     Returns
     -------
-    binned_spikes : ndarray (n_neurons, n_timebins)
-        Spike counts per bin.
-    true_conn : ndarray (n_neurons, n_neurons)
-        Signed synaptic weight matrix [pre, post].
-        Positive = excitatory, negative = inhibitory, 0 = no connection.
-    neuron_names : list of str
-        Population label for each neuron (e.g. 'L2e', 'L4i', ...).
+    binned_spikes, true_conn, neuron_names  (same contract as the other loaders)
     """
-
-    data_dir = 'datasets/pdcm'
 
     spkt       = np.load(f'{data_dir}/spkt.npy')
     spkid      = np.load(f'{data_dir}/spkid.npy')
@@ -492,6 +509,13 @@ def load_pdcm_network(downsample_factor='auto', gap=0, step=0):
     neuron_names = list(pop_labels)
 
     print(spkt.shape, spkid.shape)
+
+    # Truncate to the requested recording length before binning.
+    if max_time_s is not None:
+        window_ms = max_time_s * 1000.0
+        keep = spkt < window_ms
+        spkt, spkid = spkt[keep], spkid[keep]
+        sim_dur_ms = min(sim_dur_ms, window_ms)
 
     # resolve 'auto' from a native 1 ms binning before choosing the final bin
     if isinstance(downsample_factor, str):
@@ -508,11 +532,14 @@ def load_pdcm_network(downsample_factor='auto', gap=0, step=0):
     valid = (t_idx >= 0) & (t_idx < n_bins)
     np.add.at(binned_spikes, (spkid.astype(int)[valid], t_idx[valid]), 1)
 
-    print(f"Loaded PDCM network: {n_neurons} neurons, "
+    print(f"Loaded PDCM network ({data_dir}): {n_neurons} neurons, "
           f"{sim_dur_ms:.0f} ms simulation")
     print(f"Binned spikes shape: {binned_spikes.shape}  "
           f"(bin size = {downsample_factor} ms)")
     print(f"Binned spikes possibilities: {np.unique(binned_spikes)}")
+
+    if not plot:
+        return binned_spikes, true_conn, neuron_names
 
     spike_times_s = [np.where(binned_spikes[i] > 0)[0] * downsample_factor / 1000 for i in range(n_neurons)]
     plt.figure(figsize=(10, 5))
@@ -562,10 +589,53 @@ def load_pdcm_network(downsample_factor='auto', gap=0, step=0):
     plt.xlabel('Postsynaptic')
     plt.ylabel('Presynaptic')
     plt.tight_layout()
-    plt.savefig('datasets/pdcm/ground_truth.pdf', format='pdf')
+    plt.savefig(f'{data_dir}/ground_truth.pdf', format='pdf')
     plt.close()
 
     return binned_spikes, true_conn, neuron_names
+
+
+# Neuron count per scaling size, for reference (derived from weight_matrix.npy):
+#   0p002 -> 149,  0p010 -> 767,  0p025 -> 1924,  0p050 -> 3854 neurons.
+_PDCM_SIZES = ('0p002', '0p010', '0p025', '0p050')
+
+
+def load_pdcm_network(downsample_factor='auto', gap=0, step=0,
+                      size=None, max_time_s=None, plot=True):
+    """
+    Load a PDCM NetPyNE simulation dataset, optionally at a given network size
+    and recording length (for time/neuron scaling studies).
+
+    Parameters
+    ----------
+    downsample_factor : int or 'auto'
+        Bin size in ms, or 'auto' (signed-edge stability). Pass an explicit int
+        for a scaling sweep so the bin is held fixed across sizes/durations.
+    gap, step : ignored
+        Kept for API compatibility with other loaders.
+    size : {None, '0p002', '0p010', '0p025', '0p050'}
+        None -> the base 'datasets/pdcm' dataset. Otherwise selects
+        'datasets/pdcm_<size>' (149 / 767 / 1924 / 3854 neurons respectively).
+    max_time_s : float or None
+        Keep only the first ``max_time_s`` seconds (datasets are 2000 s). Use to
+        sweep recording length.
+    plot : bool
+        Write raster / ground-truth PDFs (turn off during a replicate sweep).
+
+    Returns
+    -------
+    binned_spikes : ndarray (n_neurons, n_timebins)
+    true_conn : ndarray (n_neurons, n_neurons)   signed weights [pre, post]
+    neuron_names : list of str                   population label per neuron
+    """
+    if size is None:
+        data_dir = 'datasets/pdcm'
+    else:
+        if size not in _PDCM_SIZES:
+            raise ValueError(f"unknown pdcm size {size!r}; options: {_PDCM_SIZES}")
+        data_dir = f'datasets/pdcm_{size}'
+    return _load_pdcm_dir(data_dir, downsample_factor=downsample_factor,
+                          max_time_s=max_time_s, plot=plot)
 
 
 def load_allen_network(downsample_factor='auto', gap=0, step=0,
@@ -832,115 +902,15 @@ def load_mdp_network(downsample_factor='auto', gap=0, step=0):
     return binned_spikes, true_conn, neuron_names
 
 
-def load_pdcm_large_network(downsample_factor='auto', gap=0, step=0):
+def load_pdcm_large_network(downsample_factor='auto', gap=0, step=0,
+                            max_time_s=None, plot=True):
     """
-    Load the PDCM NetPyNE simulation dataset.
-
-    Parameters
-    ----------
-    downsample_factor : int or 'auto'
-        If 'auto' (default), the bin is chosen by signed-edge stability (see
-        circuit_gnn.optimal_bin_size); otherwise used as below.
-        Bin size in ms (e.g. 10 -> 10 ms bins)
-    gap : ignored
-        Kept for API compatibility with other loaders.
-
-    Returns
-    -------
-    binned_spikes : ndarray (n_neurons, n_timebins)
-        Spike counts per bin.
-    true_conn : ndarray (n_neurons, n_neurons)
-        Signed synaptic weight matrix [pre, post].
-        Positive = excitatory, negative = inhibitory, 0 = no connection.
-    neuron_names : list of str
-        Population label for each neuron (e.g. 'L2e', 'L4i', ...).
+    Load the large PDCM NetPyNE simulation dataset. Thin wrapper over
+    :func:`_load_pdcm_dir`; see :func:`load_pdcm_network` for the shared
+    parameter/return contract.
     """
-
-    data_dir = 'datasets/pdcm_large'
-
-    spkt       = np.load(f'{data_dir}/spkt.npy')
-    spkid      = np.load(f'{data_dir}/spkid.npy')
-    true_conn  = np.load(f'{data_dir}/weight_matrix.npy')
-    pop_labels = np.load(f'{data_dir}/pop_labels.npy')
-    sim_dur_ms = np.load(f'{data_dir}/sim_duration_ms.npy')[0]
-    n_neurons    = true_conn.shape[0]
-    neuron_names = list(pop_labels)
-
-    print(spkt.shape, spkid.shape)
-
-    # resolve 'auto' from a native 1 ms binning before choosing the final bin
-    if isinstance(downsample_factor, str):
-        native_bins = int(sim_dur_ms // 1)
-        native = np.zeros((n_neurons, native_bins), dtype=np.int32)
-        nt_idx = np.floor(spkt / 1).astype(int)
-        nvalid = (nt_idx >= 0) & (nt_idx < native_bins)
-        np.add.at(native, (spkid.astype(int)[nvalid], nt_idx[nvalid]), 1)
-        downsample_factor = resolve_downsample(downsample_factor, native, 1.0)
-
-    n_bins = int(sim_dur_ms // downsample_factor)
-    binned_spikes = np.zeros((n_neurons, n_bins), dtype=np.int32)
-    t_idx = np.floor(spkt / downsample_factor).astype(int)
-    valid = (t_idx >= 0) & (t_idx < n_bins)
-    np.add.at(binned_spikes, (spkid.astype(int)[valid], t_idx[valid]), 1)
-
-    print(f"Loaded PDCM network: {n_neurons} neurons, "
-          f"{sim_dur_ms:.0f} ms simulation")
-    print(f"Binned spikes shape: {binned_spikes.shape}  "
-          f"(bin size = {downsample_factor} ms)")
-    print(f"Binned spikes possibilities: {np.unique(binned_spikes)}")
-
-    spike_times_s = [np.where(binned_spikes[i] > 0)[0] * downsample_factor / 1000 for i in range(n_neurons)]
-    plt.figure(figsize=(10, 5))
-    plt.eventplot(spike_times_s, orientation='horizontal', linelengths=0.8, color='black')
-    plt.xlabel('Time (s)')
-    plt.ylabel('Neuron Index')
-    plt.title('Spike Raster')
-    plt.tight_layout()
-    plt.savefig(f'{data_dir}/raster_plot.pdf', format='pdf')
-    plt.close()
-
-    # Plot ground truth connectivity
-    cmap = sns.diverging_palette(240, 10, as_cmap=True)
-    vmin = min(true_conn.min(), -1e-6)
-    vmax = max(true_conn.max(),  1e-6)
-    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
-
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(true_conn,
-                xticklabels=False, yticklabels=False,
-                cmap=cmap, norm=norm,
-                cbar_kws={'label': 'Synaptic weight (pA)'},
-                square=True)
-
-    # Draw population boundary lines
-    pops_ordered = ['L2e','L2i','L4e','L4i','L5e','L5i','L6e','L6i']
-    boundaries, tick_centers, tick_labels = [], [], []
-    cursor = 0
-    for pop in pops_ordered:
-        count = np.sum(pop_labels == pop)
-        if count == 0:
-            continue
-        boundaries.append(cursor)
-        tick_centers.append(cursor + count / 2)
-        tick_labels.append(pop)
-        cursor += count
-    boundaries.append(cursor)
-
-    ax = plt.gca()
-    for b in boundaries:
-        ax.axhline(b, color='k', linewidth=0.5)
-        ax.axvline(b, color='k', linewidth=0.5)
-    ax.set_xticks(tick_centers); ax.set_xticklabels(tick_labels, fontsize=8)
-    ax.set_yticks(tick_centers); ax.set_yticklabels(tick_labels, fontsize=8, rotation=0)
-
-    plt.title('True Connectivity (PDCM NetPyNE)')
-    plt.xlabel('Postsynaptic')
-    plt.ylabel('Presynaptic')
-    plt.tight_layout()
-    plt.savefig('datasets/pdcm_large/ground_truth.pdf', format='pdf')
-    plt.close()
-
-    return binned_spikes, true_conn, neuron_names
+    return _load_pdcm_dir('datasets/pdcm_large', downsample_factor=downsample_factor,
+                          max_time_s=max_time_s, plot=plot)
 
 
 def load_v1_v2_network(downsample_factor='auto', gap=0, step=0):
