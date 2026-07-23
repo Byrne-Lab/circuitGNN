@@ -623,16 +623,15 @@ def robust_sign_inference(binned_spikes, num_taus=3, ridge=1e-3):
     def _partial_corr(X):
         corr = np.nan_to_num(np.corrcoef(X.T), nan=0.0)
         np.fill_diagonal(corr, 1.0)
-        prec = np.linalg.inv(corr + ridge * np.eye(corr.shape[0]))
+        prec = np.linalg.inv(corr + ridge * np.eye(corr.shape[0])) # add ridge
         d = np.diag(prec)
         return -prec / np.sqrt(np.outer(d, d))
 
     N = binned_spikes.shape[0]
-    active = np.where(binned_spikes.std(axis=1) > 0)[0]
+    active = np.where(binned_spikes.std(axis=1) > 0)[0] # drop silent neurons
     gdi = np.zeros((N, N))
     if len(active) < N:
-        print(f"sign inference: dropped {N - len(active)} silent neurons, "
-              f"{len(active)} active (ridge={ridge}).")
+        print(f"sign inference: dropped {N - len(active)} silent neurons, " f"{len(active)} active (ridge={ridge}).")
     if len(active) < 2:
         return gdi
 

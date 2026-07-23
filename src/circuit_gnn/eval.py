@@ -78,7 +78,7 @@ passed_run_ids = []
 num_failed_runs = 0
 for run_idx in range(1, num_runs+1):
     ablation_row = ablation_csv[ablation_csv['run_id'] == run_idx]
-    if np.abs(ablation_row.difference.values[0]) < ablation_threshold:
+    if ablation_row.difference.values[0] > -ablation_threshold:
         num_failed_runs+=1
         print(f'Skipping run {run_idx} for failing the ablation test')
         continue

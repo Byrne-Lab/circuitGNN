@@ -46,7 +46,7 @@ def load_runs(results_loc):
     mats, pass_flags = [], []
     for run_idx in ablation_csv["run_id"]:
         row = ablation_csv[ablation_csv["run_id"] == run_idx]
-        passed = np.abs(row.difference.values[0]) >= ABLATION_THRESHOLD
+        passed = row.difference.values[0] <= -ABLATION_THRESHOLD
         ok = bool(passed and os.path.exists(f"{results_loc}/gnn_{run_idx}.npy"))
         pass_flags.append(ok)
         if ok:

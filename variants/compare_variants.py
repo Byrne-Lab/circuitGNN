@@ -73,7 +73,7 @@ def load_variant_results(
 
     df = pd.read_csv(csv_path)
     total = len(df)
-    passed_ids = df[df["difference"].abs() >= ablation_threshold]["run_id"].tolist()
+    passed_ids = df[df["difference"] <= -ablation_threshold]["run_id"].tolist()
 
     matrices = []
     for run_id in passed_ids:
