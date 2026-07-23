@@ -10,9 +10,6 @@ from circuit_gnn.data import load_pdcm_network
 from circuit_gnn.experiment import RunConfig, run_experiment
 from circuit_gnn.utils import plot_pdcm_matrix
 
-# Time/neuron scaling sweep for the 0p050 PDCM network (3854 neurons).
-# 20 runs per recording length; bin fixed at 3 ms (the value 'auto' resolves to
-# for the default pdcm dataset) so it does not confound the duration axis.
 SIZE = "0p050"
 DURATIONS_S = [60, 120, 240, 480, 960, 1920]
 BIN_MS = 3

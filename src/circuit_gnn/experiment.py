@@ -2,7 +2,7 @@ import csv
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Optional, Union
+from typing import Callable, Iterable, Optional, Union
 
 import numpy as np
 import torch
@@ -64,6 +64,7 @@ def run_experiment(
     loader_kwargs: Optional[dict] = None,
     device: Optional[torch.device] = None,
     results_root: Optional[Union[str, Path]] = None,
+    run_ids: Optional[Iterable[int]] = None,
 ) -> None:
     """Train the GNN for `cfg.num_runs` seeds and log the A ablation.
 
@@ -74,6 +75,7 @@ def run_experiment(
     loader_kwargs : extra kwargs for the loader (e.g. {'gap': 0.20, 'step': 1})
     results_root  : base dir for outputs; results go to <results_root>/<data>
                     (default "results", so results/<data>)
+    run_ids       : explicit run indices to execute. Defaults to range(1, num_runs + 1).
     """
     cfg = cfg or RunConfig()
     loader_kwargs = loader_kwargs or {}
@@ -103,8 +105,9 @@ def run_experiment(
         with open(csv_path, "w", newline="") as f:
             csv.writer(f).writerow(["run_id", "A_val_loss", "no_A_val_loss", "difference"])
 
-    for run_idx in range(1, cfg.num_runs + 1):
-        print(f"\nRUN {run_idx} / {cfg.num_runs}")
+    run_ids = list(run_ids) if run_ids is not None else list(range(1, cfg.num_runs + 1))
+    for run_idx in run_ids:
+        print(f"\nRUN {run_idx} (of {run_ids})")
         start_time = time.perf_counter()
 
         config = TrainConfig(

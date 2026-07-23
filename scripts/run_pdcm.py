@@ -13,7 +13,6 @@ from circuit_gnn.utils import plot_pdcm_matrix
 
 def main():
     cfg = RunConfig(num_runs=50, num_epochs=50)
-
     pop_labels = np.load("datasets/pdcm/pop_labels.npy")
 
     def plot_fn(learned_A, run_idx, save_dir, neuron_names):
