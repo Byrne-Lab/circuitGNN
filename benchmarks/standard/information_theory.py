@@ -40,7 +40,7 @@ def _H(prob):
 
 
 # mutual information
-def calculate_mutual_information(binned_spikes, max_lag=30, n_surrogates=0, alpha=0.05):
+def calculate_mutual_information(binned_spikes, max_lag=30):
     print('Calculating mutual information...')
     num_channels, ntime = binned_spikes.shape
     mi_curves = np.zeros((num_channels, num_channels, max_lag))
@@ -76,7 +76,7 @@ def calculate_mutual_information(binned_spikes, max_lag=30, n_surrogates=0, alph
 
 
 # transfer entropy
-def calculate_transfer_entropy(binned_spikes, L=3, max_lag=30, n_surrogates=0, alpha=0.05):
+def calculate_transfer_entropy(binned_spikes, L=3, max_lag=30):
     print('Calculating transfer entropy...')
     num_channels, ntime = binned_spikes.shape
     te_curves = np.zeros((num_channels, num_channels, max_lag))
@@ -120,7 +120,7 @@ def calculate_transfer_entropy(binned_spikes, L=3, max_lag=30, n_surrogates=0, a
 
 
 # conditional transfer entropy
-def calculate_conditional_transfer_entropy(binned_spikes, pairwise_te, L=3, n_surrogates=0, alpha=0.05):
+def calculate_conditional_transfer_entropy(binned_spikes, pairwise_te, L=3):
     print('Calculating conditional transfer entropy...')
     num_channels, ntime = binned_spikes.shape
     cte_matrix = np.zeros((num_channels, num_channels))

@@ -72,7 +72,7 @@ VARIANTS = {
 DATASET_REGISTRY = {
     "yuto": {
         "loader": load_yuto_network,
-        "loader_kwargs": {"downsample_factor": "auto", "gap": 0.20, "step": 1},
+        "loader_kwargs": {"downsample_factor": "auto"},
         "num_epochs": 20,
         "default_window": 100,
     },

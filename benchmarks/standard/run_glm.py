@@ -18,7 +18,7 @@ data_map = {
 }
 
 
-for data in ['yuto', 'arbitrary', 'pdcm']:
+for data in ['pdcm']:
 
     if data == 'yuto':
         downsample_factor = 2  # 1 ms
@@ -27,7 +27,7 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
     elif data == 'pdcm':
         downsample_factor = 1  # 1 ms
 
-    save_dir = f"datasets/{data}/init"
+    save_dir = f"datasets/{data}/baseline"
     os.makedirs(save_dir, exist_ok=True)
 
     binned_spikes, true_conn, neuron_names = data_map[data](downsample_factor=downsample_factor)

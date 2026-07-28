@@ -23,7 +23,8 @@ def _prepare_intervals(binned_spikes, target_idx, window_bins=50, subinterval_bi
             for s in range(n_sub): # for each subinterval
                 end   = t_end - s * subinterval_bins
                 start = end - subinterval_bins
-                row.append(0 if start < 0 else int(np.any(binned_spikes[src, start:end])))
+                row.append(0 if start < 0 else int(np.sum(binned_spikes[src, start:end])))
+                # row.append(0 if start < 0 else int(np.any(binned_spikes[src, start:end])))
         return row
 
     rows, labels = [], []

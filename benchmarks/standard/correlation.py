@@ -9,18 +9,24 @@ def calculate_correlation(binned_spikes, max_lag=30):
     num_channels, num_time = binned_spikes.shape
     corr_curves = np.zeros((num_channels, num_channels, max_lag))
 
-    for i in range(num_channels):
-        for j in range(num_channels):
-            if i == j:
+    for pre in range(num_channels):
+        for post in range(num_channels):
+            if pre == post:
                 continue
 
-            x = binned_spikes[i, :]
-            y = binned_spikes[j, :]
+            x_pre = binned_spikes[pre, :]
+            x_post = binned_spikes[post, :]
 
-            corr = scipy.signal.correlate(x - np.mean(x), y - np.mean(y), mode='full', method='fft')
-            corr = corr / (np.std(x) * np.std(y) * (len(x)-1))
+            sd_pre, sd_post = np.std(x_pre), np.std(x_post)
+            if sd_pre == 0 or sd_post == 0:  # silent unit: correlation undefined
+                continue
+
+            # correlate(a, b) puts the SECOND argument's lead at positive lag index,
+            # so pass (post, pre) to read out pre -> post at lags 1..max_lag.
+            corr = scipy.signal.correlate(x_post - np.mean(x_post), x_pre - np.mean(x_pre), mode='full', method='fft')
+            corr = corr / (sd_pre * sd_post * (len(x_pre) - 1))
             zero_lag = len(corr) // 2
-            corr_curves[i, j, :] = corr[zero_lag + 1 : zero_lag + max_lag + 1]
+            corr_curves[pre, post, :] = corr[zero_lag + 1 : zero_lag + max_lag + 1]
 
     ci_matrix = np.zeros((num_channels, num_channels))
     pk_matrix = np.zeros((num_channels, num_channels))

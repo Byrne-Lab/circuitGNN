@@ -14,7 +14,7 @@ from .train import TrainConfig, train_model, load_checkpoint
 class RunConfig:
     # data / sweep
     downsample_factor: Union[int, str] = "auto"
-    num_runs: int = 5
+    num_runs: int = 20
 
     # training
     window_size: int = 100
@@ -72,7 +72,7 @@ def run_experiment(
     loader        : load_<dataset>_network; called with downsample_factor + loader_kwargs
     cfg           : RunConfig (universal defaults; pass overrides per script)
     plot_fn       : optional callback to render each run's learned adjacency
-    loader_kwargs : extra kwargs for the loader (e.g. {'gap': 0.20, 'step': 1})
+    loader_kwargs : extra kwargs for the loader (e.g. {'max_time_s': 500})
     results_root  : base dir for outputs; results go to <results_root>/<data>
                     (default "results", so results/<data>)
     run_ids       : explicit run indices to execute. Defaults to range(1, num_runs + 1).

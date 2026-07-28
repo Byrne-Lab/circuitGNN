@@ -15,7 +15,6 @@ def main():
     def plot_fn(learned_A, run_idx, save_dir, neuron_names):
         plot_connectivity_matrix(learned_A, neuron_names=neuron_names, method_name=f"GNN {run_idx}", save_dir=save_dir)
 
-    # gap/step default inside the loader; pass via loader_kwargs to change them
     run_experiment("small_circuit_B", load_small_circuit_B_network, cfg, plot_fn)
 
 

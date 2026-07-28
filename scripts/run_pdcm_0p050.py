@@ -11,7 +11,7 @@ from circuit_gnn.experiment import RunConfig, run_experiment
 from circuit_gnn.utils import plot_pdcm_matrix
 
 SIZE = "0p050"
-DURATIONS_S = [60, 120, 240, 480, 960, 1920]
+DURATIONS_S = [60, 120, 240, 480]
 BIN_MS = 3
 NUM_RUNS = 20
 

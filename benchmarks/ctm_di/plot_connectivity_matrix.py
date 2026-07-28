@@ -14,7 +14,7 @@ RED_BLUE = sns.diverging_palette(240, 10, as_cmap=True)
 os.chdir('C:/Users/agupta17/Documents/GitHub/circuitGNN/datasets')
 data_name = 'small_circuit_B'
 
-data = f"{data_name}/init/ctm_di_raw_connectivity.mat"
+data = f"{data_name}/baseline/ctm_di_raw_connectivity.mat"
 
 def threshold_di(C, min_consecutive=4, threshold=0.01):
     n_bins, n, _ = C.shape
@@ -45,7 +45,7 @@ C_thresh = threshold_di(C)
 print(f"Thresholded connectivity shape: {C_thresh.shape}")
 print(f"Non-zero connections: {np.count_nonzero(C_thresh)}")
 
-save_dir = f"{data_name}/init"
+save_dir = f"{data_name}/baseline"
 np.save(f"{save_dir}/CTM_DI.npy", C_thresh)
 
 if data_name in ('pdcm', 'pdcm_large'):

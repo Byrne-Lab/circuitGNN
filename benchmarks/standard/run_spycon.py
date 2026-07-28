@@ -66,8 +66,12 @@ def threshold_weights(weight_mat, score_mat, threshold):
     return np.where(score_mat > threshold, weight_mat, 0.0)
 
 
-def _ms(v):
-    return f"{v * 1e3:g}ms"
+# Axes measured in seconds; everything else is tagged as a bare number.
+_TIME_AXES = {'binsize', 'syn_tau', 'syn_delay', 'delta_t', 'tau'}
+
+
+def _fmt(k, v):
+    return f"{v * 1e3:g}ms" if k in _TIME_AXES else f"{v:g}"
 
 
 def factorial(cls, prefix, **axes):
@@ -76,7 +80,7 @@ def factorial(cls, prefix, **axes):
     out = {}
     for combo in itertools.product(*(axes[k] for k in names)):
         params = dict(zip(names, combo))
-        tag = "_".join(f"{k}{_ms(v)}" for k, v in params.items())
+        tag = "_".join(f"{k}{_fmt(k, v)}" for k, v in params.items())
         out[f"{prefix}_{tag}"] = cls(params)
     return out
 
@@ -86,11 +90,11 @@ def ofat(cls, prefix, **axes):
     out = {}
     for key, values in axes.items():
         for v in values:
-            out[f"{prefix}_{key}{_ms(v)}"] = cls({key: v})
+            out[f"{prefix}_{key}{_fmt(key, v)}"] = cls({key: v})
     return out
 
 
-for data in ['yuto', 'arbitrary']:
+for data in ['pdcm']:
 
     # 1 ms bins to accurately get spike times
     if data == 'yuto':
@@ -102,7 +106,7 @@ for data in ['yuto', 'arbitrary']:
 
     bin_size_sec = bin_size_map[data](downsample_factor)
 
-    save_dir = f"datasets/{data}/init"
+    save_dir = f"datasets/{data}/baseline"
     os.makedirs(save_dir, exist_ok=True)
 
     binned_spikes, true_conn, neuron_names = data_map[data](downsample_factor=downsample_factor)
@@ -120,15 +124,14 @@ for data in ['yuto', 'arbitrary']:
         'glmcc_default': GLMCC(),
         'glmpp_default': GLMPP(),
     }
+    # methods.update(factorial(CoincidenceIndex, 'ci',
+    #    binsize=[1e-3, 2e-3, 5e-3],
+    #    syn_tau=[3e-3, 6e-3, 10e-3, 20e-3]))
+
+    methods.update(factorial(Smoothed_CCG, 'sccg',
+        binsize=[1e-3, 2e-3, 5e-3],
+        hf=[0.4, 0.6, 0.8]))
     
-    methods.update(factorial(CoincidenceIndex, 'ci',
-        binsize=[1e-3, 2e-3, 5e-3, 10e-3],
-        syn_tau=[3e-3, 6e-3, 10e-3, 20e-3]))
-
-    methods.update(ofat(Smoothed_CCG, 'sccg',
-        binsize=[1e-3, 2e-3, 5e-3]))
-    methods.update({f'sccg_hf{hf}': Smoothed_CCG({'hf': hf}) for hf in (0.4, 0.8)})
-
     methods.update(ofat(directed_STTC, 'dsttc',
         delta_t=[3e-3, 5e-3, 7e-3, 10e-3, 20e-3, 30e-3]))
 

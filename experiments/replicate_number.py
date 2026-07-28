@@ -18,12 +18,13 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
 
 from circuit_gnn.data import (
-    load_arbitrary_network, load_small_circuit_A_network, load_small_circuit_B_network,
+    load_arbitrary_network, load_pdcm_network, load_small_circuit_A_network, load_small_circuit_B_network,
 )
 from circuit_gnn.utils import align_matrices, get_consistent_connections, calculate_fit
 
-DATASETS = ["small_circuit_A", "small_circuit_B", "arbitrary"]
+DATASETS = ["pdcm", "small_circuit_A", "small_circuit_B", "arbitrary"]
 LOADERS = {
+    "pdcm": load_pdcm_network,
     "arbitrary": load_arbitrary_network,
     "small_circuit_A": load_small_circuit_A_network,
     "small_circuit_B": load_small_circuit_B_network,
@@ -32,9 +33,7 @@ LOADERS = {
 ABLATION_THRESHOLD = 0.10
 CONSISTENCY_THRESHOLD = 0.8
 MAX_RUNS = 50
-# Bin width (ms) for the spikes used only for GDI sign inference, converted to a
-# per-loader downsample factor via each loader's native bin (0.5 ms here).
-SIGN_BIN_MS = 20
+GDI_BIN_MS = 20
 NATIVE_MS = {"small_circuit_A": 0.5, "small_circuit_B": 0.5}
 OUT_DIR = "figures"
 
@@ -68,8 +67,8 @@ def sweep_dataset(data):
         print(f"  [skip] {results_loc}/ablation.csv not found")
         return None
 
-    sign_bin = round(SIGN_BIN_MS / NATIVE_MS.get(data, 1.0))
-    binned_spikes, true_conn, _ = LOADERS[data](gap=0.20, step=1, downsample_factor=sign_bin)
+    sign_bin = round(GDI_BIN_MS / NATIVE_MS.get(data, 1.0))
+    binned_spikes, true_conn, _ = LOADERS[data](downsample_factor=sign_bin, plot=False)
 
     mats, pass_flags = load_runs(results_loc)
     N = min(len(pass_flags), MAX_RUNS)

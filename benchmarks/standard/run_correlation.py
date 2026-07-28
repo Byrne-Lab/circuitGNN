@@ -20,14 +20,14 @@ data_map = {'yuto': load_yuto_network, 'arbitrary': load_arbitrary_network, 'pdc
 native_res_ms = {'yuto': 0.5, 'arbitrary': 1.0, 'pdcm': 1.0} # in ms
 bin_sizes_ms = [1, 2, 5, 10, 50]
 
-for data in ['yuto', 'arbitrary', 'pdcm']:
+for data in ['pdcm']:
     for bin_size_ms in bin_sizes_ms:
 
         downsample_factor = int(bin_size_ms / native_res_ms[data])
         suffix = f"_{bin_size_ms}ms"
         max_lag = 30
 
-        save_dir = f"datasets/{data}/init"
+        save_dir = f"datasets/{data}/baseline"
         os.makedirs(save_dir, exist_ok=True)
 
         print(f"\n=== {data} | {bin_size_ms} ms bins (downsample_factor={downsample_factor}) ===")
@@ -46,4 +46,9 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
         np.save(f"{save_dir}/correlation_pk{suffix}.npy", pk_correlation)
         np.save(f"{save_dir}/correlation_ci{suffix}.npy", ci_correlation)
         plot_connectivity_matrix(pk_correlation, neuron_names, f"Correlation PK {suffix}", save_dir=save_dir, plot_val=False)
-        plot_connectivity_matrix(ci_correlation, neuron_names, f"Correlation CI {suffix}", save_dir=save_dir, plot_val=False)
+        plot_connectivity_matrix(ci_correlation, neuron_names, f"Correlation CI {suffix}", save_dir=save_dir, plot_val=False, signed=False)
+
+        gdi_sign = robust_sign_inference(binned_spikes)
+        ci_correlation_signed = apply_gdi_sign(ci_correlation, gdi_sign)
+        np.save(f"{save_dir}/correlation_ci{suffix}_signed.npy", ci_correlation_signed)
+        plot_connectivity_matrix(ci_correlation_signed, neuron_names, f"Correlation CI {suffix} GDI-signed", save_dir=save_dir, plot_val=False)

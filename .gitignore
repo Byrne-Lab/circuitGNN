@@ -24,4 +24,6 @@ version_*
 AttentionGNN
 run_allen.py
 run_hc3*
-figures
+figures/*.pdf
+figures/*.csv
+figures/pdcm

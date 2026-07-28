@@ -19,12 +19,13 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.transforms as mtransforms
 
-plt.rcParams.update({"pdf.fonttype": 42, "ps.fonttype": 42, "savefig.dpi": 400,
-                     "font.family": "sans-serif", "font.sans-serif": ["Arial"]})
+DPI = 600  # raster resolution of the rasterized=True imshow layers inside the vector PDF
+
+plt.rcParams.update({"pdf.fonttype": 42, "ps.fonttype": 42, "savefig.dpi": DPI, "font.family": "sans-serif", "font.sans-serif": ["Arial"]})
 
 ROOT = Path(__file__).resolve().parents[1]
-DATASETS = ["arbitrary", "yuto", "pdcm_large", "pdcm", "mdp", "v1_v2", "small_circuit_A", "small_circuit_B", "allen"]
-
+DATASETS = ["arbitrary"]
+plot_lim=0.04
 
 def import_pkg():
     sys.path.insert(0, str(ROOT / "src"))
@@ -74,14 +75,12 @@ def plot_diamond(fc_emp, fc_model, r, title, path, gap=0.06):
     mod = np.where(lower.T, fc_model, np.nan) # keep model's upper triangle
     dx = gap * n
 
-    fig, ax = plt.subplots(figsize=(6, 5), dpi=400)
-    kw = dict(cmap="RdBu_r", vmin=-0.04, vmax=0.04, origin="lower", interpolation="nearest", rasterized=True)
+    fig, ax = plt.subplots(figsize=(6, 5), dpi=DPI)
+    kw = dict(cmap="RdBu_r", vmin=-plot_lim, vmax=plot_lim, origin="lower", interpolation="nearest", rasterized=True)
     rot = mtransforms.Affine2D().rotate_deg(45) # 45 deg counter-clockwise
     ax.imshow(emp, transform=rot + mtransforms.Affine2D().translate(-dx, 0) + ax.transData, **kw)
     im = ax.imshow(mod, transform=rot + mtransforms.Affine2D().translate(dx, 0) + ax.transData, **kw)
 
-    # neuron index along each outer edge: a neuron sits one unit up a 45 deg edge from
-    # the triangle's bottom corner (-+dx, 0)
     d, off = 2 ** -0.5, 0.04 * n
     ticks = sorted(set(list(range(0, n, max(1, round(n / 10)))) + [n - 1]))
     for k in ticks:
@@ -96,11 +95,20 @@ def plot_diamond(fc_emp, fc_model, r, title, path, gap=0.06):
     ax.text(-(0.98 * n + dx), 0.71 * n, "Empirical\nFC", ha="right", va="center", fontsize=9)
     ax.text(0.98 * n + dx, 0.71 * n, "Model\nFC", ha="left", va="center", fontsize=9)
     ax.text(0, -0.1 * n, f"r = {r:.2f}", ha="center", va="center", fontsize=11)
-    cb = fig.colorbar(im, ax=ax, shrink=0.6, label="correlation", ticks=[-0.04, 0, 0.04])
+    cb = fig.colorbar(im, ax=ax, shrink=0.6, label="correlation", ticks=[-plot_lim, 0, plot_lim])
     cb.ax.tick_params(labelsize=8)
     cb.outline.set_visible(False)
     fig.tight_layout()
-    fig.savefig(path, dpi=400, bbox_inches="tight", pad_inches=0.05)
+    fig.savefig(path, dpi=DPI, bbox_inches="tight", pad_inches=0.05)
+    plt.close(fig)
+
+
+def plot_heatmap(fc, path):
+    fig, ax = plt.subplots(figsize=(4, 4))
+    im = ax.imshow(fc, cmap="RdBu_r", vmin=-plot_lim, vmax=plot_lim, rasterized=True)
+    fig.colorbar(im, ax=ax, shrink=0.8, label="correlation", ticks=[-plot_lim, 0, plot_lim])
+    fig.savefig(path, dpi=DPI, bbox_inches="tight")
+    plt.close(fig)
 
 
 @torch.no_grad()
@@ -162,12 +170,13 @@ def main():
     print(f"\n  FC r (mean over {len(rs)}): {mean_r:.3f} +/- {np.nanstd(rs):.3f}")
 
     out = folder / "forecast_onestep"
-    np.savez(out.with_suffix(".npz"), fc_r=rs, fc_emp=fc_emp, fc_gen=np.array(fcs),
-             checkpoints=[c.name for c in ckpts])
-    plot_diamond(fc_emp, np.mean(fcs, axis=0), mean_r,
-                 f"{name} / {folder.name} one-step ({len(rs)} runs, held-out)",
-                 out.with_suffix(".pdf"))
-    print(f"  wrote {out.with_suffix('.npz').name}, {out.with_suffix('.pdf').name}")
+    fc_mean = np.mean(fcs, axis=0)
+    np.savez(out.with_suffix(".npz"), fc_r=rs, fc_emp=fc_emp, fc_gen=np.array(fcs), checkpoints=[c.name for c in ckpts])
+    
+    plot_diamond(fc_emp, fc_mean, mean_r, f"{name} / {folder.name} one-step ({len(rs)} runs, held-out)", out.with_suffix(".pdf"))
+    
+    plot_heatmap(fc_emp, f"{out}_emp.pdf")
+    plot_heatmap(fc_mean, f"{out}_model.pdf")
 
 
 if __name__ == "__main__":

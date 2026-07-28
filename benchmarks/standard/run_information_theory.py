@@ -18,9 +18,9 @@ from circuit_gnn.utils import *
 data_map = {'yuto': load_yuto_network, 'arbitrary': load_arbitrary_network, 'pdcm': load_pdcm_network}
 
 native_res_ms = {'yuto': 0.5, 'arbitrary': 1.0, 'pdcm': 1.0} # in ms
-bin_sizes_ms = [1, 2, 5, 10, 50]
+bin_sizes_ms = [2, 5, 10, 50]
 
-for data in ['yuto', 'arbitrary', 'pdcm']:
+for data in ['pdcm']:
     for bin_size_ms in bin_sizes_ms:
 
         downsample_factor = int(bin_size_ms / native_res_ms[data])
@@ -28,7 +28,7 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
         max_lag = 30
         L = 3
 
-        save_dir = f"datasets/{data}/init"
+        save_dir = f"datasets/{data}/baseline"
         os.makedirs(save_dir, exist_ok=True)
 
         print(f"\n {data} | {bin_size_ms} ms bins (downsample_factor={downsample_factor})")
@@ -38,7 +38,10 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
         num_channels, num_time = binned_spikes.shape
         print(f'{num_channels} channels, {num_time} time points')
 
+        gdi_sign = robust_sign_inference(binned_spikes)
+
         # Mutual information
+        
         start_time = time.time()
         ci_mi, pk_mi = calculate_mutual_information(binned_spikes, max_lag=max_lag)
         end_time = time.time()
@@ -46,10 +49,18 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
 
         np.save(f"{save_dir}/mutual_information_pk{suffix}.npy", pk_mi)
         np.save(f"{save_dir}/mutual_information_ci{suffix}.npy", ci_mi)
-        plot_connectivity_matrix(pk_mi, neuron_names, f"Mutual Information PK {suffix}", save_dir=save_dir, plot_val=False)
-        plot_connectivity_matrix(ci_mi, neuron_names, f"Mutual Information CI {suffix}", save_dir=save_dir, plot_val=False)
+        plot_connectivity_matrix(pk_mi, neuron_names, f"Mutual Information PK {suffix}", save_dir=save_dir, plot_val=False, signed=False)
+        plot_connectivity_matrix(ci_mi, neuron_names, f"Mutual Information CI {suffix}", save_dir=save_dir, plot_val=False, signed=False)
 
+        pk_mi_signed = apply_gdi_sign(pk_mi, gdi_sign)
+        ci_mi_signed = apply_gdi_sign(ci_mi, gdi_sign)
+        np.save(f"{save_dir}/mutual_information_pk{suffix}_signed.npy", pk_mi_signed)
+        np.save(f"{save_dir}/mutual_information_ci{suffix}_signed.npy", ci_mi_signed)
+        plot_connectivity_matrix(pk_mi_signed, neuron_names, f"Mutual Information PK {suffix} GDI-signed", save_dir=save_dir, plot_val=False)
+        plot_connectivity_matrix(ci_mi_signed, neuron_names, f"Mutual Information CI {suffix} GDI-signed", save_dir=save_dir, plot_val=False)
+        
         # Transfer entropy
+
         start_time = time.time()
         ci_te, pk_te = calculate_transfer_entropy(binned_spikes, L=L, max_lag=max_lag)
         end_time = time.time()
@@ -57,10 +68,18 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
 
         np.save(f"{save_dir}/transfer_entropy_pk{suffix}.npy", pk_te)
         np.save(f"{save_dir}/transfer_entropy_ci{suffix}.npy", ci_te)
-        plot_connectivity_matrix(pk_te, neuron_names, f"Transfer Entropy PK {suffix}", save_dir=save_dir, plot_val=False)
-        plot_connectivity_matrix(ci_te, neuron_names, f"Transfer Entropy CI {suffix}", save_dir=save_dir, plot_val=False)
+        plot_connectivity_matrix(pk_te, neuron_names, f"Transfer Entropy PK {suffix}", save_dir=save_dir, plot_val=False, signed=False)
+        plot_connectivity_matrix(ci_te, neuron_names, f"Transfer Entropy CI {suffix}", save_dir=save_dir, plot_val=False, signed=False)
+
+        pk_te_signed = apply_gdi_sign(pk_te, gdi_sign)
+        ci_te_signed = apply_gdi_sign(ci_te, gdi_sign)
+        np.save(f"{save_dir}/transfer_entropy_pk{suffix}_signed.npy", pk_te_signed)
+        np.save(f"{save_dir}/transfer_entropy_ci{suffix}_signed.npy", ci_te_signed)
+        plot_connectivity_matrix(pk_te_signed, neuron_names, f"Transfer Entropy PK {suffix} GDI-signed", save_dir=save_dir, plot_val=False)
+        plot_connectivity_matrix(ci_te_signed, neuron_names, f"Transfer Entropy CI {suffix} GDI-signed", save_dir=save_dir, plot_val=False)
 
         # Conditional transfer entropy
+        """
         start_time = time.time()
         pairwise_te = np.load(f"{save_dir}/transfer_entropy_pk{suffix}.npy")
         conditional_transfer_entropy = calculate_conditional_transfer_entropy(binned_spikes, pairwise_te, L=L)
@@ -68,4 +87,9 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
         print(f"conditional transfer entropy calculation time: {(end_time - start_time)/60:.2f} minutes")
 
         np.save(f"{save_dir}/conditional_transfer_entropy{suffix}.npy", conditional_transfer_entropy)
-        plot_connectivity_matrix(conditional_transfer_entropy, neuron_names, f"Conditional Transfer Entropy {suffix}", save_dir=save_dir, plot_val=False)
+        plot_connectivity_matrix(conditional_transfer_entropy, neuron_names, f"Conditional Transfer Entropy {suffix}", save_dir=save_dir, plot_val=False, signed=False)
+
+        cte_signed = apply_gdi_sign(conditional_transfer_entropy, gdi_sign)
+        np.save(f"{save_dir}/conditional_transfer_entropy{suffix}_signed.npy", cte_signed)
+        plot_connectivity_matrix(cte_signed, neuron_names, f"Conditional Transfer Entropy {suffix} GDI-signed", save_dir=save_dir, plot_val=False)
+        """

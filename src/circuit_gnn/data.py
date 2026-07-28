@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from circuit_gnn.optimal_bin_size import resolve_downsample
 
-def load_arbitrary_network(downsample_factor = 'auto', gap=-1, step=-1):
+def load_arbitrary_network(downsample_factor = 'auto'):
     """
     Load the arbitrary SNNAP simulation dataset.
 
@@ -30,10 +30,6 @@ def load_arbitrary_network(downsample_factor = 'auto', gap=-1, step=-1):
         If 'auto' (default), the bin is chosen by signed-edge stability (see
         circuit_gnn.optimal_bin_size); otherwise used as below.
         Bin size in ms (e.g. 10 -> 10 ms bins). Native resolution is 1 ms.
-    gap : ignored
-        Kept for API compatibility with other loaders.
-    step : ignored
-        Kept for API compatibility with other loaders.
 
     Returns
     -------
@@ -156,7 +152,7 @@ def load_arbitrary_network(downsample_factor = 'auto', gap=-1, step=-1):
     return binned_spikes, true_conn, neuron_names
 
 
-def load_yuto_network(downsample_factor = 'auto', gap=0.20, step=1):
+def load_yuto_network(downsample_factor = 'auto'):
     """
     Load the Yuto compartmental neuron simulation dataset.
 
@@ -167,12 +163,6 @@ def load_yuto_network(downsample_factor = 'auto', gap=0.20, step=1):
         circuit_gnn.optimal_bin_size); otherwise used as below.
         Bin size in ms (e.g. 20 -> 10 ms bins, 10 -> 5 ms bins).
         Native resolution is 0.5 ms.
-    gap : float
-        Synaptic gap/delay used to select the ground-truth connectivity file
-        (e.g. 0.20 loads ``true_connectivity_0.20.npy``).
-    step : {1, 2}
-        1 for direct (monosynaptic) connections, 2 for 1-hop (disynaptic)
-        connections. Selects between the two connectivity .npy files.
 
     Returns
     -------
@@ -184,17 +174,28 @@ def load_yuto_network(downsample_factor = 'auto', gap=0.20, step=1):
         Positive = excitatory, negative = inhibitory, 0 = no connection.
     neuron_names : list of str
         Neuron label for each neuron parsed from ``spikes.head``.
+
+    Notes
+    -----
+    The synaptic gap/delay and the hop count used to pick the ground-truth
+    connectivity file are fixed below (``GAP`` / ``STEP``); edit them here to
+    switch to a different ``true_connectivity_*.npy``.
     """
+
+    # synaptic gap/delay selecting the ground-truth file, and 1 = direct
+    # (monosynaptic) vs 2 = 1-hop (disynaptic) connections
+    GAP = 0.20
+    STEP = 1
 
     data_loc = 'datasets/yuto/spikes.out'
     with open('datasets/yuto/spikes.head') as f:
         neuron_names = [line.split('[')[1].split('.')[0] for line in f if line.startswith('V[')]
-    
+
     # Load true connectivity
-    if step == 1:
-        true_conn = np.load(f"datasets/yuto/true_connectivity_{gap:.2f}.npy")
-    elif step == 2:
-        true_conn = np.load(f"datasets/yuto/true_connectivity_1_hop_{gap:.2f}.npy")
+    if STEP == 1:
+        true_conn = np.load(f"datasets/yuto/true_connectivity_{GAP:.2f}.npy")
+    elif STEP == 2:
+        true_conn = np.load(f"datasets/yuto/true_connectivity_1_hop_{GAP:.2f}.npy")
     true_conn = np.round(true_conn, 3)
     true_conn = np.nan_to_num(true_conn, nan=0.0)
 
@@ -267,7 +268,7 @@ def load_yuto_network(downsample_factor = 'auto', gap=0.20, step=1):
     return binned_spikes, true_conn, neuron_names
 
 
-def load_small_circuit_A_network(downsample_factor = 'auto', gap=0.20, step=1):
+def load_small_circuit_A_network(downsample_factor = 'auto'):
     """
     Load the small circuit A simulation dataset froM Cai et al.
 
@@ -369,7 +370,7 @@ def load_small_circuit_A_network(downsample_factor = 'auto', gap=0.20, step=1):
     return binned_spikes, true_conn, neuron_names
 
 
-def load_small_circuit_B_network(downsample_factor = 'auto', gap=0.20, step=1):
+def load_small_circuit_B_network(downsample_factor = 'auto'):
     """
     Load the small circuit B simulation dataset froM Cai et al.
 
@@ -472,7 +473,17 @@ def load_small_circuit_B_network(downsample_factor = 'auto', gap=0.20, step=1):
     return binned_spikes, true_conn, neuron_names
 
 
-def _load_pdcm_dir(data_dir, downsample_factor='auto', max_time_s=None, plot=True):
+def pdcm_hidden_indices(n_neurons, hide_frac, hide_seed=0):
+    rng = np.random.default_rng(hide_seed)
+    perm = rng.permutation(n_neurons)
+    n_hidden = int(round(hide_frac * n_neurons))
+    hidden = np.sort(perm[:n_hidden])
+    kept = np.sort(perm[n_hidden:])
+    return kept, hidden
+
+
+def _load_pdcm_dir(data_dir, downsample_factor='auto', max_time_s=None, plot=True,
+                   hide_frac=0.0, hide_seed=0):
     """Shared engine for every PDCM NetPyNE dataset (base, scaling sizes, large).
 
     All PDCM datasets share an identical on-disk layout
@@ -494,10 +505,16 @@ def _load_pdcm_dir(data_dir, downsample_factor='auto', max_time_s=None, plot=Tru
     plot : bool
         Write the raster / ground-truth PDFs. Turn off inside a replicate sweep
         (the figures are identical across seeds and slow for large N).
+    hide_frac : float
+        Fraction of neurons to hide. ``true_conn`` and ``neuron_names`` are reduced to the observed submatrix. 
+        The hidden set is random and deterministic in ``hide_seed``.
+    hide_seed : int
+        Seed selecting which neurons are hidden.
 
     Returns
     -------
-    binned_spikes, true_conn, neuron_names  (same contract as the other loaders)
+    binned_spikes, true_conn, neuron_names  (same contract as the other loaders;
+    reduced to the observed neurons when ``hide_frac`` > 0)
     """
 
     spkt       = np.load(f'{data_dir}/spkt.npy')
@@ -537,6 +554,16 @@ def _load_pdcm_dir(data_dir, downsample_factor='auto', max_time_s=None, plot=Tru
     print(f"Binned spikes shape: {binned_spikes.shape}  "
           f"(bin size = {downsample_factor} ms)")
     print(f"Binned spikes possibilities: {np.unique(binned_spikes)}")
+
+    if hide_frac > 0:
+        n_full = n_neurons
+        kept, hidden = pdcm_hidden_indices(n_full, hide_frac, hide_seed)
+        binned_spikes = binned_spikes[kept]
+        true_conn     = true_conn[np.ix_(kept, kept)]
+        pop_labels    = pop_labels[kept]
+        neuron_names  = [neuron_names[i] for i in kept]
+        n_neurons     = len(kept)
+        print(f"Hiding {hide_frac:.0%} (seed={hide_seed}): " f"{n_neurons} of {n_full} neurons observed")
 
     if not plot:
         return binned_spikes, true_conn, neuron_names
@@ -600,8 +627,9 @@ def _load_pdcm_dir(data_dir, downsample_factor='auto', max_time_s=None, plot=Tru
 _PDCM_SIZES = ('0p002', '0p010', '0p025', '0p050')
 
 
-def load_pdcm_network(downsample_factor='auto', gap=0, step=0,
-                      size=None, max_time_s=None, plot=True):
+def load_pdcm_network(downsample_factor='auto',
+                      size=None, max_time_s=None, plot=True,
+                      hide_frac=0.0, hide_seed=0):
     """
     Load a PDCM NetPyNE simulation dataset, optionally at a given network size
     and recording length (for time/neuron scaling studies).
@@ -611,8 +639,6 @@ def load_pdcm_network(downsample_factor='auto', gap=0, step=0,
     downsample_factor : int or 'auto'
         Bin size in ms, or 'auto' (signed-edge stability). Pass an explicit int
         for a scaling sweep so the bin is held fixed across sizes/durations.
-    gap, step : ignored
-        Kept for API compatibility with other loaders.
     size : {None, '0p002', '0p010', '0p025', '0p050'}
         None -> the base 'datasets/pdcm' dataset. Otherwise selects
         'datasets/pdcm_<size>' (149 / 767 / 1924 / 3854 neurons respectively).
@@ -621,6 +647,8 @@ def load_pdcm_network(downsample_factor='auto', gap=0, step=0,
         sweep recording length.
     plot : bool
         Write raster / ground-truth PDFs (turn off during a replicate sweep).
+    hide_frac, hide_seed : float, int
+        Hide a uniform-random ``hide_frac`` of neurons.
 
     Returns
     -------
@@ -635,10 +663,11 @@ def load_pdcm_network(downsample_factor='auto', gap=0, step=0,
             raise ValueError(f"unknown pdcm size {size!r}; options: {_PDCM_SIZES}")
         data_dir = f'datasets/pdcm_{size}'
     return _load_pdcm_dir(data_dir, downsample_factor=downsample_factor,
-                          max_time_s=max_time_s, plot=plot)
+                          max_time_s=max_time_s, plot=plot,
+                          hide_frac=hide_frac, hide_seed=hide_seed)
 
 
-def load_allen_network(downsample_factor='auto', gap=0, step=0,
+def load_allen_network(downsample_factor='auto',
                        max_time_s=None, data_dir='datasets/allen'):
     """
     Load the Allen Visual-Coding Neuropixels hippocampal dataset used by
@@ -659,8 +688,6 @@ def load_allen_network(downsample_factor='auto', gap=0, step=0,
         circuit_gnn.optimal_bin_size). NB: 'auto' builds a 1 ms native array over
         the whole ~2.68 h recording (~3 GB for 92 neurons); pass an explicit bin
         (or max_time_s) to avoid that.
-    gap, step : ignored
-        Kept for API compatibility with the other loaders.
     max_time_s : float or None
         If set, keep only spikes in the first ``max_time_s`` seconds. The full
         recording is ~2.68 h; the paper also fits on 500 s / 1000 s subsets.
@@ -741,7 +768,7 @@ def load_allen_network(downsample_factor='auto', gap=0, step=0,
     return binned_spikes, true_conn, neuron_names
 
 
-def load_mdp_network(downsample_factor='auto', gap=0, step=0):
+def load_mdp_network(downsample_factor='auto'):
     """
     Load the multi-area-model mdp simulation dataset.
 
@@ -751,8 +778,6 @@ def load_mdp_network(downsample_factor='auto', gap=0, step=0):
         If 'auto' (default), the bin is chosen by signed-edge stability (see
         circuit_gnn.optimal_bin_size); otherwise used as below.
         Bin size in ms (e.g. 10 -> 10 ms bins).
-    gap : ignored
-        Kept for API compatibility with other loaders.
 
     Returns
     -------
@@ -902,7 +927,7 @@ def load_mdp_network(downsample_factor='auto', gap=0, step=0):
     return binned_spikes, true_conn, neuron_names
 
 
-def load_pdcm_large_network(downsample_factor='auto', gap=0, step=0,
+def load_pdcm_large_network(downsample_factor='auto',
                             max_time_s=None, plot=True):
     """
     Load the large PDCM NetPyNE simulation dataset. Thin wrapper over
@@ -913,7 +938,7 @@ def load_pdcm_large_network(downsample_factor='auto', gap=0, step=0,
                           max_time_s=max_time_s, plot=plot)
 
 
-def load_v1_v2_network(downsample_factor='auto', gap=0, step=0):
+def load_v1_v2_network(downsample_factor='auto'):
     """
     Load the multi-area-model V1+V2 two-area simulation dataset.
 
@@ -928,8 +953,6 @@ def load_v1_v2_network(downsample_factor='auto', gap=0, step=0):
         If 'auto' (default), the bin is chosen by signed-edge stability (see
         circuit_gnn.optimal_bin_size); otherwise used as below.
         Bin size in ms (e.g. 10 -> 10 ms bins).
-    gap : ignored
-        Kept for API compatibility with other loaders.
 
     Returns
     -------
@@ -1274,7 +1297,7 @@ def _load_hc3(session_tars, durations, cell_csv=None, topdir=None, regions=None,
     return binned_spikes, np.zeros((n, n)), neuron_names
 
 
-def load_hc3_session(downsample_factor='auto', gap=-1, step=-1,
+def load_hc3_session(downsample_factor='auto',
                      tar_path='datasets/hc3/ec016.1016.tar.gz',
                      topdir='ec016.58',
                      cell_csv='datasets/hc3/hc3-cell.csv',
@@ -1302,8 +1325,6 @@ def load_hc3_session(downsample_factor='auto', gap=-1, step=-1,
     downsample_factor : int or 'auto'
         Bin size in ms, or 'auto' to pick it by signed-edge stability via
         circuit_gnn.optimal_bin_size (native resolution here is 1 ms).
-    gap, step : ignored
-        Kept for API compatibility with the other loaders.
     tar_path : str
         Path to the downloaded session archive, e.g. ec016.1016.tar.gz.
         Only .res.N/.clu.N/.xml are read; the large .spk/.eeg/.fet members are
@@ -1350,7 +1371,7 @@ def load_hc3_session(downsample_factor='auto', gap=-1, step=-1,
                      keep_silent=False, data_dir=data_dir)
 
 
-def load_hc3_gor01(downsample_factor='auto', gap=-1, step=-1, **overrides):
+def load_hc3_gor01(downsample_factor='auto', **overrides):
     """CRCNS hc-3 session gor01-6-7 / 2006-6-7_11-26-53 (linearOne maze).
 
     The densest single-region recording in the data set: ~60 quality-passing
@@ -1371,10 +1392,10 @@ def load_hc3_gor01(downsample_factor='auto', gap=-1, step=-1, **overrides):
         duration_s=2692.247,          # from hc3-session.csv (id 1455)
     )
     params.update(overrides)
-    return load_hc3_session(downsample_factor=downsample_factor, gap=gap, step=step, **params)
+    return load_hc3_session(downsample_factor=downsample_factor, **params)
 
 
-def load_hc3_pin01(downsample_factor='auto', gap=-1, step=-1, **overrides):
+def load_hc3_pin01(downsample_factor='auto', **overrides):
     """CRCNS hc-3 session pin01-11-04 / 11-04_22-31-40 (Tmaze).
 
     A CA1+CA3 recording (20 CA1 + 27 quality-passing CA3 cells) with monosynaptic
@@ -1396,10 +1417,10 @@ def load_hc3_pin01(downsample_factor='auto', gap=-1, step=-1, **overrides):
         duration_s=1811.692,          # from hc3-session.csv (id 1477)
     )
     params.update(overrides)
-    return load_hc3_session(downsample_factor=downsample_factor, gap=gap, step=step, **params)
+    return load_hc3_session(downsample_factor=downsample_factor, **params)
 
 
-def load_hc3_ec014(downsample_factor='auto', gap=-1, step=-1, **overrides):
+def load_hc3_ec014(downsample_factor='auto', **overrides):
     """CRCNS hc-3 session ec014.333 / topdir ec014.24 (bigSquare open field).
 
     This is the in-vivo session used for Fig. 5 of Kobayashi et al. 2019
@@ -1423,10 +1444,10 @@ def load_hc3_ec014(downsample_factor='auto', gap=-1, step=-1, **overrides):
         duration_s=5608.653,          # from hc3-session.csv (id 854)
     )
     params.update(overrides)
-    return load_hc3_session(downsample_factor=downsample_factor, gap=gap, step=step, **params)
+    return load_hc3_session(downsample_factor=downsample_factor, **params)
 
 
-def load_hc3_ec016(downsample_factor='auto', gap=-1, step=-1, **overrides):
+def load_hc3_ec016(downsample_factor='auto', **overrides):
     """CRCNS hc-3 session ec016.1016 / topdir ec016.58 (multi-region).
 
     The multi-region reference session used across the standard baselines and the
@@ -1447,7 +1468,7 @@ def load_hc3_ec016(downsample_factor='auto', gap=-1, step=-1, **overrides):
         max_time_s=2000,
     )
     params.update(overrides)
-    return load_hc3_session(downsample_factor=downsample_factor, gap=gap, step=step, **params)
+    return load_hc3_session(downsample_factor=downsample_factor, **params)
 
 
 def _read_hc3_res_clu(tar_path):
@@ -1504,7 +1525,7 @@ def _read_hc3_res_clu(tar_path):
 
 
 def load_hc3_topdir_stage(topdir, sessions, session_durations,
-                          downsample_factor='auto', gap=-1, step=-1,
+                          downsample_factor='auto',
                           data_dir='datasets/hc3',
                           cell_csv='datasets/hc3/hc3-cell.csv',
                           regions=None, quality_filter=True, tag=None):
@@ -1544,7 +1565,7 @@ EC015_03_DURATIONS = {                      # seconds, from hc3-session.csv
 
 
 def load_hc3_ec015(stage='wheel', sessions=None,
-                   downsample_factor='auto', gap=-1, step=-1, **overrides):
+                   downsample_factor='auto', **overrides):
     """Load part of topdir ec015.03 for state-dependent connectivity inference.
 
     Specify EITHER:
@@ -1583,4 +1604,4 @@ def load_hc3_ec015(stage='wheel', sessions=None,
         tag=tag,
     )
     params.update(overrides)
-    return load_hc3_topdir_stage(downsample_factor=downsample_factor, gap=gap, step=step, **params)
+    return load_hc3_topdir_stage(downsample_factor=downsample_factor, **params)

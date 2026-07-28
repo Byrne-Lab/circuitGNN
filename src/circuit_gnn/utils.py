@@ -4,7 +4,7 @@ from numpy.linalg import norm
 import os
 import matplotlib.pyplot as plt
 import seaborn as sns
-from matplotlib.colors import TwoSlopeNorm
+from matplotlib.colors import TwoSlopeNorm, Normalize
 from matplotlib.colors import LinearSegmentedColormap
 import matplotlib.patches as mpatches
 from matplotlib.colors import ListedColormap
@@ -42,29 +42,34 @@ def make_saturated_rdbu(cut=0.15):
     return LinearSegmentedColormap.from_list("RdBu_saturated", colors)
 
 
-def plot_connectivity_matrix(matrix, neuron_names, method_name='GNN', cmap=None, save_dir='benchmarking_results', plot_val=True, vmin=None, vmax=None):
+def plot_connectivity_matrix(matrix, neuron_names, method_name='GNN', cmap=None, save_dir='benchmarking_results', plot_val=True, vmin=None, vmax=None, signed=True):
     os.makedirs(save_dir, exist_ok=True)
 
-    vmin = min(matrix.min(), -1e-6) if vmin is None else vmin
-    vmax = max(matrix.max(),  1e-6) if vmax is None else vmax
-    plot_norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
-    plot_cmap = copy.copy(sns.diverging_palette(240, 10, as_cmap=True)) if cmap is None else copy.copy(cmap)
+    if signed:
+        vmin = min(matrix.min(), -1e-6) if vmin is None else vmin
+        vmax = max(matrix.max(),  1e-6) if vmax is None else vmax
+        plot_norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+        plot_cmap = copy.copy(sns.diverging_palette(240, 10, as_cmap=True)) if cmap is None else copy.copy(cmap)
+        cbar_label = 'Connectivity Strength'
+    else:
+        vmin = 0.0 if vmin is None else vmin
+        vmax = max(matrix.max(), 1e-6) if vmax is None else vmax
+        plot_norm = Normalize(vmin=vmin, vmax=vmax)
+        plot_cmap = copy.copy(plt.cm.Greys) if cmap is None else copy.copy(cmap)
+        cbar_label = 'Connectivity Strength (unsigned)'
 
-    # Mask exact zeros so they render as white
-    plot_cmap.set_bad(color='white')
+    plot_cmap.set_bad(color='white') # mask exact zeros so they render as white
     masked_matrix = np.ma.masked_where(matrix == 0, matrix)
 
     plt.figure(figsize=(10, 8))
     if plot_val:
-        # Build annotation array: empty string where value is 0
-        annot_labels = np.where(matrix == 0, '',
-                                np.vectorize(lambda v: f"{v:.3f}")(matrix))
+        annot_labels = np.where(matrix == 0, '', np.vectorize(lambda v: f"{v:.3f}")(matrix))
         sns.heatmap(masked_matrix, xticklabels=neuron_names, yticklabels=neuron_names,
-                    cmap=plot_cmap, norm=plot_norm, cbar_kws={'label': 'Connectivity Strength'},
+                    cmap=plot_cmap, norm=plot_norm, cbar_kws={'label': cbar_label},
                     square=True, annot=annot_labels, fmt='')   # fmt='' because values are already strings
     else:
         sns.heatmap(masked_matrix, xticklabels=neuron_names, yticklabels=neuron_names,
-                    cmap=plot_cmap, norm=plot_norm, cbar_kws={'label': 'Connectivity Strength'},
+                    cmap=plot_cmap, norm=plot_norm, cbar_kws={'label': cbar_label},
                     square=True)
 
     plt.title(f"{method_name} Connectivity Matrix")
@@ -78,11 +83,17 @@ def plot_connectivity_matrix(matrix, neuron_names, method_name='GNN', cmap=None,
 
 PDCM_POPS_ORDERED = ['L2e', 'L2i', 'L4e', 'L4i', 'L5e', 'L5i', 'L6e', 'L6i']
 
-def plot_pdcm_matrix(matrix, pop_labels, method_name='GNN', save_dir='results'):
+def plot_pdcm_matrix(matrix, pop_labels, method_name='GNN', save_dir='results', blackout=None):
+
     os.makedirs(save_dir, exist_ok=True)
+    matrix = np.asarray(matrix, dtype=float).copy()
     cmap = sns.diverging_palette(240, 10, as_cmap=True)
-    vmin = min(matrix.min(), -1e-6)
-    vmax = max(matrix.max(),  1e-6)
+    if blackout is not None and len(blackout) > 0:
+        cmap.set_bad('gray')                  # sns.heatmap renders NaN cells with the bad colour
+        matrix[blackout, :] = np.nan
+        matrix[:, blackout] = np.nan
+    vmin = min(np.nanmin(matrix), -1e-6)
+    vmax = max(np.nanmax(matrix),  1e-6)
     norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
 
     plt.figure(figsize=(10, 8))
@@ -648,6 +659,10 @@ def robust_sign_inference(binned_spikes, num_taus=3, ridge=1e-3):
         sign[:, j] = np.sign(best)
     gdi[np.ix_(active, active)] = sign
     return gdi
+
+
+def apply_gdi_sign(matrix, gdi_sign):
+    return np.abs(matrix) * gdi_sign
 
 
 def _cosine_offdiag(a, b):

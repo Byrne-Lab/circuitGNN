@@ -34,7 +34,7 @@ from circuit_gnn.utils import (calculate_fit, align_matrices, robust_sign_infere
 RESULTS_BASE = VARIANTS_DIR / "results"
 
 DATASET_REGISTRY = {
-    "yuto":            {"loader": load_yuto_network,            "loader_kwargs": {"downsample_factor": 20, "gap": 0.20, "step": 1}},
+    "yuto":            {"loader": load_yuto_network,            "loader_kwargs": {"downsample_factor": 20}},
     "arbitrary":       {"loader": load_arbitrary_network,       "loader_kwargs": {"downsample_factor": 10}},
     "pdcm":            {"loader": load_pdcm_network,            "loader_kwargs": {"downsample_factor": 2}},
     "pdcm_large":      {"loader": load_pdcm_large_network,      "loader_kwargs": {"downsample_factor": 6}},

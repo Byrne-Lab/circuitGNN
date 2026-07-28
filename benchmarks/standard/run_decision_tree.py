@@ -22,7 +22,7 @@ data_map = {
     'pdcm': load_pdcm_network,
 }
 
-for data in ['yuto', 'arbitrary', 'pdcm']:
+for data in ['pdcm']:
 
     # 1 ms bins to accurately get spike times
     if data == 'yuto':
@@ -36,12 +36,14 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
     subinterval_bins = 10   # 10 ms subintervals
     n_runs = 30             # random-seed repetitions
 
-    save_dir = f"datasets/{data}/init"
+    save_dir = f"datasets/{data}/baseline"
     os.makedirs(save_dir, exist_ok=True)
 
     binned_spikes, true_conn, neuron_names = data_map[data](downsample_factor=downsample_factor)
     num_channels, num_time = binned_spikes.shape
     print(f'\n=== {data}: {num_channels} channels, {num_time} time points ===')
+
+    gdi_sign = robust_sign_inference(binned_spikes)
 
     # Individual MCC matrix (one model per source–target pair)
     start = time.time()
@@ -52,8 +54,15 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
 
     np.save(f"{save_dir}/decision_tree_mcc.npy", mcc_matrix)
     np.save(f"{save_dir}/decision_tree_mcc_threshold.npy", mcc_threshold)
-    plot_connectivity_matrix(mcc_matrix, neuron_names, "Decision Tree MCC", save_dir=save_dir, plot_val=False,)
-    plot_connectivity_matrix(mcc_threshold, neuron_names, "Decision Tree MCC threshold", save_dir=save_dir, plot_val=False,)
+    plot_connectivity_matrix(mcc_matrix, neuron_names, "Decision Tree MCC", save_dir=save_dir, plot_val=False, signed=False)
+    plot_connectivity_matrix(mcc_threshold, neuron_names, "Decision Tree MCC threshold", save_dir=save_dir, plot_val=False, signed=False)
+
+    mcc_signed = apply_gdi_sign(mcc_matrix, gdi_sign)
+    mcc_threshold_signed = apply_gdi_sign(mcc_threshold, gdi_sign)
+    np.save(f"{save_dir}/decision_tree_mcc_signed.npy", mcc_signed)
+    np.save(f"{save_dir}/decision_tree_mcc_threshold_signed.npy", mcc_threshold_signed)
+    plot_connectivity_matrix(mcc_signed, neuron_names, "Decision Tree MCC GDI-signed", save_dir=save_dir, plot_val=False)
+    plot_connectivity_matrix(mcc_threshold_signed, neuron_names, "Decision Tree MCC threshold GDI-signed", save_dir=save_dir, plot_val=False)
 
     # Variable importance matrix (full model per target)
     start = time.time()
@@ -64,5 +73,12 @@ for data in ['yuto', 'arbitrary', 'pdcm']:
 
     np.save(f"{save_dir}/decision_tree_vi.npy", vi_matrix)
     np.save(f"{save_dir}/decision_tree_vi_threshold.npy", vi_threshold)
-    plot_connectivity_matrix(vi_matrix, neuron_names, "Decision Tree Variable Importance", save_dir=save_dir, plot_val=False,)
-    plot_connectivity_matrix(vi_threshold, neuron_names, "Decision Tree Variable Importance threshold", save_dir=save_dir, plot_val=False,)
+    plot_connectivity_matrix(vi_matrix, neuron_names, "Decision Tree Variable Importance", save_dir=save_dir, plot_val=False, signed=False)
+    plot_connectivity_matrix(vi_threshold, neuron_names, "Decision Tree Variable Importance threshold", save_dir=save_dir, plot_val=False, signed=False)
+
+    vi_signed = apply_gdi_sign(vi_matrix, gdi_sign)
+    vi_threshold_signed = apply_gdi_sign(vi_threshold, gdi_sign)
+    np.save(f"{save_dir}/decision_tree_vi_signed.npy", vi_signed)
+    np.save(f"{save_dir}/decision_tree_vi_threshold_signed.npy", vi_threshold_signed)
+    plot_connectivity_matrix(vi_signed, neuron_names, "Decision Tree Variable Importance GDI-signed", save_dir=save_dir, plot_val=False)
+    plot_connectivity_matrix(vi_threshold_signed, neuron_names, "Decision Tree Variable Importance threshold GDI-signed", save_dir=save_dir, plot_val=False)
