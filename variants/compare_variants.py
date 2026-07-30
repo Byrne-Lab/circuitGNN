@@ -21,25 +21,21 @@ REPO_ROOT = VARIANTS_DIR.parent
 sys.path.insert(0, str(VARIANTS_DIR))
 os.chdir(str(REPO_ROOT))
 
-from circuit_gnn.data import (load_yuto_network, load_pdcm_network, load_pdcm_large_network,
+from circuit_gnn.data import (load_OC_2_network, load_pdcm_network, load_pdcm_large_network,
                               load_arbitrary_network,
-                              load_small_circuit_A_network, load_small_circuit_B_network,
-                              load_mdp_network, load_v1_v2_network)
+                              load_small_circuit_A_network, load_small_circuit_B_network)
 from circuit_gnn.utils import (calculate_fit, align_matrices, robust_sign_inference,
                                 get_consistent_connections, get_top_k, sign_inference,
                                 plot_connectivity_matrix, plot_pdcm_matrix,
-                                plot_mdp_matrix, plot_v1_v2_matrix,
                                 plot_metric_verification)
 
 RESULTS_BASE = VARIANTS_DIR / "results"
 
 DATASET_REGISTRY = {
-    "yuto":            {"loader": load_yuto_network,            "loader_kwargs": {"downsample_factor": 20}},
+    "OC_2":            {"loader": load_OC_2_network,            "loader_kwargs": {"downsample_factor": 20}},
     "arbitrary":       {"loader": load_arbitrary_network,       "loader_kwargs": {"downsample_factor": 10}},
     "pdcm":            {"loader": load_pdcm_network,            "loader_kwargs": {"downsample_factor": 2}},
     "pdcm_large":      {"loader": load_pdcm_large_network,      "loader_kwargs": {"downsample_factor": 6}},
-    "mdp":             {"loader": load_mdp_network,             "loader_kwargs": {"downsample_factor": 6}},
-    "v1_v2":           {"loader": load_v1_v2_network,           "loader_kwargs": {"downsample_factor": 6}},
     "small_circuit_A": {"loader": load_small_circuit_A_network, "loader_kwargs": {"downsample_factor": 20}},
     "small_circuit_B": {"loader": load_small_circuit_B_network, "loader_kwargs": {"downsample_factor": 20}},
 }
@@ -117,12 +113,6 @@ def main():
         pop_labels = np.load(f"datasets/{args.dataset}/pop_labels.npy")
         def do_plot(matrix, method_name, save_dir):
             plot_pdcm_matrix(matrix, pop_labels, method_name=method_name, save_dir=save_dir)
-    elif args.dataset == "mdp":
-        def do_plot(matrix, method_name, save_dir):
-            plot_mdp_matrix(matrix, neuron_names, method_name=method_name, save_dir=save_dir)
-    elif args.dataset == "v1_v2":
-        def do_plot(matrix, method_name, save_dir):
-            plot_v1_v2_matrix(matrix, neuron_names, method_name=method_name, save_dir=save_dir)
     else:
         def do_plot(matrix, method_name, save_dir):
             plot_connectivity_matrix(matrix, neuron_names=neuron_names, method_name=method_name, save_dir=save_dir, plot_val=True)

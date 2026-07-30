@@ -20,10 +20,10 @@ end
 
 % without concurrency
 for cnt = 5:length(IRI)
-    
-    out = spiketime2train(sig,IRI(cnt));   
+
+    out = spiketime2train(sig,IRI(cnt));
     CMatrix(:,:,cnt) = Connect_CTM(out,18,1);
-    
+
 end
 
 return

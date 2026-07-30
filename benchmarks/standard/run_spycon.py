@@ -15,13 +15,15 @@ from circuit_gnn.utils import *
 from spycon.coninf import CoincidenceIndex, Smoothed_CCG, directed_STTC, GLMCC, GLMPP
 
 data_map = {
-    'yuto':      load_yuto_network,
+    'OC_1':      load_OC_1_network,
+    'OC_2':      load_OC_2_network,
     'arbitrary': load_arbitrary_network,
     'pdcm':      load_pdcm_network,
 }
 
 bin_size_map = {
-    'yuto':      lambda f: 0.5e-3 * f,
+    'OC_1':      lambda f: 0.5e-3 * f,
+    'OC_2':      lambda f: 0.5e-3 * f,
     'arbitrary': lambda f: 1e-3 * f,
     'pdcm':      lambda f: f / 1000.0,
 }
@@ -97,7 +99,7 @@ def ofat(cls, prefix, **axes):
 for data in ['pdcm']:
 
     # 1 ms bins to accurately get spike times
-    if data == 'yuto':
+    if data in ('OC_1', 'OC_2'):
         downsample_factor = 2  # 1 ms
     elif data == 'arbitrary':
         downsample_factor = 1  # 1 ms

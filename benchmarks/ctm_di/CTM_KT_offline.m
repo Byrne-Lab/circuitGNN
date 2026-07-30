@@ -15,9 +15,9 @@ end
 % length of signal
 n = length(x);
 
-% penalty factor 
+% penalty factor
 pn = 1/A;
-% pn = 1;  % 1 is no penalty 
+% pn = 1;  % 1 is no penalty
 
 % creat a cell array that contains all nodes (that have occured)
 ind_cell = cell(D+1,1);

@@ -57,7 +57,7 @@ P_matrix = zeros(2,sig_length-D,channel);
 
 % probability of single neuron
 for cnt = 1:length(index)
-    P_matrix(:,:,index(cnt)) = CTM_KT_offline(Sig(:,index(cnt))',Nx,D);  
+    P_matrix(:,:,index(cnt)) = CTM_KT_offline(Sig(:,index(cnt))',Nx,D);
 end
 
 % define the matrix that describe the speed of the synapse

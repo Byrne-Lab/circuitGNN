@@ -9,8 +9,8 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
 from circuit_gnn.data import (
-    load_arbitrary_network, load_yuto_network, load_pdcm_network,
-    load_mdp_network, load_v1_v2_network, load_allen_network,
+    load_arbitrary_network, load_OC_1_network, load_OC_2_network, load_pdcm_network,
+    load_allen_network,
     load_small_circuit_A_network, load_small_circuit_B_network,
 )
 
@@ -20,10 +20,9 @@ DATASETS = {
     'small_circuit_A': (load_small_circuit_A_network, 0.5),
     'small_circuit_B': (load_small_circuit_B_network, 0.5),
     'arbitrary':       (load_arbitrary_network, 1.0),
-    'yuto':            (load_yuto_network, 0.5),
+    'OC_1':            (load_OC_1_network, 0.5),
+    'OC_2':            (load_OC_2_network, 0.5),
     'pdcm':            (load_pdcm_network, 1.0),
-    'mdp':             (load_mdp_network, 1.0),
-    'v1_v2':           (load_v1_v2_network, 1.0),
     'allen':           (load_allen_network, 1.0),
 }
 

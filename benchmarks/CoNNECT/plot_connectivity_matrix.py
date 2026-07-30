@@ -12,7 +12,7 @@ from circuit_gnn.utils import plot_pdcm_matrix, plot_connectivity_matrix
 HERE = Path(__file__).resolve().parent          # benchmarks/CoNNECT
 REPO = HERE.parents[1]                           # repo root
 
-DATASETS = ["yuto"]
+DATASETS = ["OC_2"]
 
 
 def convert(dataset):

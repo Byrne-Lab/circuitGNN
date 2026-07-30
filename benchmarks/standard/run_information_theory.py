@@ -15,10 +15,11 @@ import time
 from circuit_gnn.data import *
 from circuit_gnn.utils import *
 
-data_map = {'yuto': load_yuto_network, 'arbitrary': load_arbitrary_network, 'pdcm': load_pdcm_network}
+data_map = {'OC_1': load_OC_1_network, 'OC_2': load_OC_2_network,
+            'arbitrary': load_arbitrary_network, 'pdcm': load_pdcm_network}
 
-native_res_ms = {'yuto': 0.5, 'arbitrary': 1.0, 'pdcm': 1.0} # in ms
-bin_sizes_ms = [2, 5, 10, 50]
+native_res_ms = {'OC_1': 0.5, 'OC_2': 0.5, 'arbitrary': 1.0, 'pdcm': 1.0} # in ms
+bin_sizes_ms = [50, 10, 5, 2, 1]
 
 for data in ['pdcm']:
     for bin_size_ms in bin_sizes_ms:
@@ -41,7 +42,7 @@ for data in ['pdcm']:
         gdi_sign = robust_sign_inference(binned_spikes)
 
         # Mutual information
-        
+        """
         start_time = time.time()
         ci_mi, pk_mi = calculate_mutual_information(binned_spikes, max_lag=max_lag)
         end_time = time.time()
@@ -58,7 +59,7 @@ for data in ['pdcm']:
         np.save(f"{save_dir}/mutual_information_ci{suffix}_signed.npy", ci_mi_signed)
         plot_connectivity_matrix(pk_mi_signed, neuron_names, f"Mutual Information PK {suffix} GDI-signed", save_dir=save_dir, plot_val=False)
         plot_connectivity_matrix(ci_mi_signed, neuron_names, f"Mutual Information CI {suffix} GDI-signed", save_dir=save_dir, plot_val=False)
-        
+        """
         # Transfer entropy
 
         start_time = time.time()
@@ -77,7 +78,7 @@ for data in ['pdcm']:
         np.save(f"{save_dir}/transfer_entropy_ci{suffix}_signed.npy", ci_te_signed)
         plot_connectivity_matrix(pk_te_signed, neuron_names, f"Transfer Entropy PK {suffix} GDI-signed", save_dir=save_dir, plot_val=False)
         plot_connectivity_matrix(ci_te_signed, neuron_names, f"Transfer Entropy CI {suffix} GDI-signed", save_dir=save_dir, plot_val=False)
-
+        
         # Conditional transfer entropy
         """
         start_time = time.time()

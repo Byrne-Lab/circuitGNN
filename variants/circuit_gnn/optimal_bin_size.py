@@ -126,7 +126,7 @@ def resolve_downsample(downsample_factor, spikes_native, native_ms,
 
 
 # native bin width (ms) per dataset loader, for the standalone recommender
-_NATIVE_MS = {"arbitrary": 1.0, "yuto": 0.5, "pdcm": 1.0, "v1": 1.0,
+_NATIVE_MS = {"arbitrary": 1.0, "OC_2": 0.5, "pdcm": 1.0,
               "small_circuit_A": 0.5, "small_circuit_B": 0.5}
 
 
@@ -145,7 +145,7 @@ if __name__ == "__main__":
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # put src/ on path
     import matplotlib
     matplotlib.use("Agg")
-    for name in ["arbitrary", "yuto", "pdcm"]:
+    for name in ["arbitrary", "OC_2", "pdcm"]:
         print(f"\n{'='*60}\nDataset: {name}\n{'='*60}")
         bin_ms, curve = recommend_for_dataset(name)
         print(f"  bin={bin_ms:g} ms   kappa curve: "

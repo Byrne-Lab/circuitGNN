@@ -48,5 +48,5 @@ fprintf('Connectivity matrix size: %d x %d x %d\n', size(conn_3d));
 
 neuron_names_str = string(neuron_names);
 
-cd('C:/Users/agupta17/Documents/GitHub/circuitGNN/datasets/pdcm')
+cd('C:/Users/agupta17/Documents/GitHub/circuitGNN/datasets/pdcm/baseline')
 save('ctm_di_raw_connectivity.mat', 'conn_3d', 'neuron_names_str', '-v7.3');

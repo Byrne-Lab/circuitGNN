@@ -10,7 +10,7 @@ from circuit_gnn.data import load_pdcm_network, pdcm_hidden_indices
 from circuit_gnn.experiment import RunConfig, run_experiment
 from circuit_gnn.utils import plot_pdcm_matrix
 
-HIDE_FRACS = [0.2, 0.4, 0.6, 0.8]
+HIDE_FRACS = [0.2, 0.4]
 HIDE_SEED = 0
 BIN_MS = 3
 NUM_RUNS = 20

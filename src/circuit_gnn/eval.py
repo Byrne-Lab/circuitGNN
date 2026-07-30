@@ -7,7 +7,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from circuit_gnn.utils import *
 from circuit_gnn.data import *
 import pandas as pd
-from functools import partial
 
 # SET PARAMETERS
 data = 'pdcm'
@@ -15,7 +14,7 @@ data = 'pdcm'
 num_runs = 50
 ablation_threshold = 0.10 # removes non-optimal runs based on ablation test
 sign_bin_ms = 20
-_native_ms = {'yuto': 0.5, 'small_circuit_A': 0.5, 'small_circuit_B': 0.5}
+_native_ms = {'OC_1': 0.5, 'OC_2': 0.5, 'small_circuit_A': 0.5, 'small_circuit_B': 0.5}
 sign_bin = round(sign_bin_ms / _native_ms.get(data, 1.0))
 
 # CREATE FOLDERS
@@ -29,51 +28,16 @@ print(f"Num runs: {num_runs}")
 print(f"Ablation threshold: {ablation_threshold}")
 
 # LOAD DATA
-data_map = {'yuto': load_yuto_network, 'arbitrary': load_arbitrary_network, 'pdcm': load_pdcm_network, 'mdp': load_mdp_network,
-            'small_circuit_A': load_small_circuit_A_network, 'small_circuit_B': load_small_circuit_B_network,
-            'hc3': load_hc3_ec016, 'hc3_gor01': load_hc3_gor01, 'hc3_pin01': load_hc3_pin01, 'hc3_ec014': load_hc3_ec014,
-            # ec015.03 behavioural stages (same neuron set across stages -> comparable A)
-            'hc3_ec015_sleep': partial(load_hc3_ec015, stage='sleep'),
-            'hc3_ec015_wheel': partial(load_hc3_ec015, stage='wheel'),
-            'hc3_ec015_midSquare': partial(load_hc3_ec015, stage='midSquare')}
-
-# PDCM scaling-sweep names, e.g. 'pdcm_0p002_60s' -> size='0p002', max_time_s=60.
-pdcm_size = None
-_m = re.match(r'pdcm_(\dp\d+)(?:_(\d+)s)?$', data)
-if _m:
-    pdcm_size = _m.group(1)
-    _pdcm_kwargs = {'size': pdcm_size, 'plot': False}
-    if _m.group(2):
-        _pdcm_kwargs['max_time_s'] = int(_m.group(2))
-    data_map[data] = partial(load_pdcm_network, **_pdcm_kwargs)
-
-pdcm_hide = None
-_mh = re.match(r'pdcm_hide(\d+)$', data)
-if _mh:
-    pdcm_hide = int(_mh.group(1)) / 100.0
-    data_map[data] = partial(load_pdcm_network, hide_frac=pdcm_hide, hide_seed=0, plot=False)
+data_map = {'OC_1': load_OC_1_network, 'OC_2': load_OC_2_network,
+            'arbitrary': load_arbitrary_network, 'pdcm': load_pdcm_network,
+            'small_circuit_A': load_small_circuit_A_network, 'small_circuit_B': load_small_circuit_B_network}
 
 binned_spikes, true_conn, neuron_names = data_map[data](downsample_factor=sign_bin)
 
-if pdcm_hide is not None:
+if data == 'pdcm':
     pop_labels = np.load('datasets/pdcm/pop_labels.npy')
-    _kept, _hidden = pdcm_hidden_indices(len(pop_labels), pdcm_hide, hide_seed=0)
-    def do_plot(matrix, method_name):
-        full = np.zeros((len(pop_labels), len(pop_labels)))
-        full[np.ix_(_kept, _kept)] = matrix
-        plot_pdcm_matrix(full, pop_labels, method_name=method_name, save_dir=results_loc, blackout=_hidden)
-
-elif data == 'pdcm' or pdcm_size is not None:
-    _pdcm_dir = 'datasets/pdcm' if pdcm_size is None else f'datasets/pdcm_{pdcm_size}'
-    pop_labels = np.load(f'{_pdcm_dir}/pop_labels.npy')
     def do_plot(matrix, method_name):
         plot_pdcm_matrix(matrix, pop_labels, method_name=method_name, save_dir=results_loc)
-elif data == 'mdp':
-    def do_plot(matrix, method_name):
-        plot_mdp_matrix(matrix, neuron_names, method_name=method_name, save_dir=results_loc)
-elif data.startswith('hc3'):
-    def do_plot(matrix, method_name):
-        plot_hc3_matrix(matrix, neuron_names, method_name=method_name, save_dir=results_loc)
 else:
     def do_plot(matrix, method_name):
         plot_connectivity_matrix(matrix, neuron_names=neuron_names, method_name=method_name, save_dir=results_loc, plot_val=True, vmin=-0.015, vmax=0.010)

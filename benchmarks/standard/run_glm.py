@@ -12,7 +12,8 @@ from circuit_gnn.data import *
 from circuit_gnn.utils import *
 
 data_map = {
-    'yuto': load_yuto_network,
+    'OC_1': load_OC_1_network,
+    'OC_2': load_OC_2_network,
     'arbitrary': load_arbitrary_network,
     'pdcm': load_pdcm_network,
 }
@@ -20,7 +21,7 @@ data_map = {
 
 for data in ['pdcm']:
 
-    if data == 'yuto':
+    if data in ('OC_1', 'OC_2'):
         downsample_factor = 2  # 1 ms
     elif data == 'arbitrary':
         downsample_factor = 1  # 1 ms

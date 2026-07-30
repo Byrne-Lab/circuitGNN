@@ -9,7 +9,6 @@ claude_notes.txt
 *.so
 benchmarks/CoNNECT/modules/build/
 benchmarks/CoNNECT/modules/sources/crosscorrelogram.c
-toy_phantom
 *.csv
 variants/variant_distribution.py
 plot_thresholds.py
@@ -18,12 +17,12 @@ encoder_interpretability*.py
 plot_variant_distribution.py
 analyze_interpretable.py    
 results*
-hc3_documents
 random*
 version_*
 AttentionGNN
 run_allen.py
-run_hc3*
 figures/*.pdf
 figures/*.csv
 figures/pdcm
+figures/scaling
+figures/hiding

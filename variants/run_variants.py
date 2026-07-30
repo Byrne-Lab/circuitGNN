@@ -27,9 +27,9 @@ REPO_ROOT = VARIANTS_DIR.parent
 sys.path.insert(0, str(VARIANTS_DIR))
 os.chdir(str(REPO_ROOT))
 
-from circuit_gnn.data import load_yuto_network, load_pdcm_network, load_pdcm_large_network, load_arbitrary_network, load_small_circuit_A_network, load_small_circuit_B_network, load_mdp_network, load_v1_v2_network
+from circuit_gnn.data import load_OC_2_network, load_pdcm_network, load_pdcm_large_network, load_arbitrary_network, load_small_circuit_A_network, load_small_circuit_B_network
 from circuit_gnn.train import TrainConfig, train_model, load_checkpoint
-from circuit_gnn.utils import plot_connectivity_matrix, plot_pdcm_matrix, plot_mdp_matrix, plot_v1_v2_matrix
+from circuit_gnn.utils import plot_connectivity_matrix, plot_pdcm_matrix
 
 RESULTS_BASE = VARIANTS_DIR / "results"
 
@@ -70,8 +70,8 @@ VARIANTS = {
 # downsample_factor='auto' -> the bin is chosen by signkappa_interior inside each loader
 # (circuit_gnn.optimal_bin_size).
 DATASET_REGISTRY = {
-    "yuto": {
-        "loader": load_yuto_network,
+    "OC_2": {
+        "loader": load_OC_2_network,
         "loader_kwargs": {"downsample_factor": "auto"},
         "num_epochs": 20,
         "default_window": 100,
@@ -90,18 +90,6 @@ DATASET_REGISTRY = {
     },
     "pdcm_large": {
         "loader": load_pdcm_large_network,
-        "loader_kwargs": {"downsample_factor": "auto"},
-        "num_epochs": 50,
-        "default_window": 100,
-    },
-    "mdp": {
-        "loader": load_mdp_network,
-        "loader_kwargs": {"downsample_factor": "auto"},
-        "num_epochs": 50,
-        "default_window": 100,
-    },
-    "v1_v2": {
-        "loader": load_v1_v2_network,
         "loader_kwargs": {"downsample_factor": "auto"},
         "num_epochs": 50,
         "default_window": 100,
@@ -218,10 +206,6 @@ def run_dataset_variant(
         np.save(output_dir / f"gnn_{run_idx}.npy", learned_A)
         if dataset_name in ('pdcm', 'pdcm_large'):
             plot_pdcm_matrix(learned_A, pop_labels, method_name=f"GNN {run_idx}", save_dir=str(output_dir))
-        elif dataset_name == 'mdp':
-            plot_mdp_matrix(learned_A, neuron_names, method_name=f"GNN {run_idx}", save_dir=str(output_dir))
-        elif dataset_name == 'v1_v2':
-            plot_v1_v2_matrix(learned_A, neuron_names, method_name=f"GNN {run_idx}", save_dir=str(output_dir))
         else:
             plot_connectivity_matrix(learned_A, neuron_names=neuron_names,
                                      method_name=f"GNN {run_idx}", save_dir=str(output_dir))

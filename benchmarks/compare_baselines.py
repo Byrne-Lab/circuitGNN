@@ -14,11 +14,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 os.chdir(str(REPO_ROOT))  # loaders use dataset paths relative to the repo root
 
-from circuit_gnn.data import (load_yuto_network, load_pdcm_network, load_arbitrary_network, load_small_circuit_A_network, load_small_circuit_B_network)
+from circuit_gnn.data import (load_OC_2_network, load_pdcm_network, load_arbitrary_network, load_small_circuit_A_network, load_small_circuit_B_network)
 from circuit_gnn.utils import calculate_fit
 
 DATASET_REGISTRY = {
-    "yuto":            {"loader": load_yuto_network,            "loader_kwargs": {"downsample_factor": 20}},
+    "OC_2":            {"loader": load_OC_2_network,            "loader_kwargs": {"downsample_factor": 20}},
     "pdcm":            {"loader": load_pdcm_network,            "loader_kwargs": {"downsample_factor": 2}},
     "arbitrary":       {"loader": load_arbitrary_network,       "loader_kwargs": {"downsample_factor": 10}},
     "small_circuit_A": {"loader": load_small_circuit_A_network, "loader_kwargs": {"downsample_factor": 20}},

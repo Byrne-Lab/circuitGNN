@@ -7,7 +7,7 @@ REPO = os.path.abspath(os.path.join(HERE, "..", ".."))     # repo root
 sys.path.insert(0, os.path.join(HERE, "modules"))          # CoNNECT modules
 sys.path.insert(0, os.path.join(REPO, "src"))              # circuit_gnn package
 
-from circuit_gnn.data import load_yuto_network
+from circuit_gnn.data import load_OC_2_network
 
 NATIVE_BIN_MS = 0.5    # native resolution of this dataset (ms)
 
@@ -26,14 +26,14 @@ def write_spiketrain(binned_spikes, native_bin_ms, path):
 
 
 def main():
-    out_dir = os.path.join(HERE, "results", "yuto")
+    out_dir = os.path.join(HERE, "results", "OC_2")
     os.makedirs(out_dir, exist_ok=True)
     spikefile = os.path.join(out_dir, "spiketrain.txt")
     savefile = os.path.join(out_dir, "estimated.csv")
 
     os.chdir(REPO)  # loaders read datasets/... relative to the repo root
-    binned_spikes, true_conn, neuron_names = load_yuto_network(downsample_factor=1)
-    print(f"[yuto] {binned_spikes.shape[0]} neurons, spike times floored to 1 ms")
+    binned_spikes, true_conn, neuron_names = load_OC_2_network(downsample_factor=1)
+    print(f"[OC_2] {binned_spikes.shape[0]} neurons, spike times floored to 1 ms")
     write_spiketrain(binned_spikes, NATIVE_BIN_MS, spikefile)
 
     with open(os.path.join(out_dir, "neuron_names.txt"), "w") as f:
@@ -42,7 +42,7 @@ def main():
     os.chdir(HERE)  # estimate() loads model/ and modules/ relative to the CoNNECT dir
     import estimate as connect
     connect.estimate(spikefile, savefile)
-    print(f"[yuto] estimated PSP matrix saved to {savefile}")
+    print(f"[OC_2] estimated PSP matrix saved to {savefile}")
 
 
 if __name__ == "__main__":
