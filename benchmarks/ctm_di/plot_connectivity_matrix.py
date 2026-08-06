@@ -50,7 +50,7 @@ np.save(f"{save_dir}/CTM_DI.npy", C_thresh)
 if data_name in ('pdcm', 'pdcm_large'):
     pop_labels = np.load(f'{data_name}/pop_labels.npy')
     plot_pdcm_matrix(C_thresh, pop_labels, method_name='CTM-DI', save_dir=save_dir)
-elif data_name in ('OC_2', 'small_circuit_A', 'small_circuit_B'):
+elif data_name in ('OC_1', 'OC_2', 'control', 'small_circuit_A', 'small_circuit_B'):
     with open(f'{data_name}/spikes.head') as f:
         neuron_names = [line.split('[')[1].split('.')[0] for line in f if line.startswith('V[')]
     plot_connectivity_matrix(C_thresh, neuron_names, method_name='CTM-DI',

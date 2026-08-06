@@ -1,7 +1,3 @@
-# http://bactra.org/notebooks/directed-information-and-transfer-entropy.html
-# https://www.statlect.com/asymptotic-theory/plug-in-principle
-# https://github.com/cbueth/infomeasure/
-
 import sys
 from pathlib import Path
 _root = Path(__file__).resolve().parents[2]
@@ -16,12 +12,19 @@ from circuit_gnn.data import *
 from circuit_gnn.utils import *
 
 data_map = {'OC_1': load_OC_1_network, 'OC_2': load_OC_2_network,
+            'control': load_control_network,
             'arbitrary': load_arbitrary_network, 'pdcm': load_pdcm_network}
 
-native_res_ms = {'OC_1': 0.5, 'OC_2': 0.5, 'arbitrary': 1.0, 'pdcm': 1.0} # in ms
+native_res_ms = {'OC_1': 0.5, 'OC_2': 0.5, 'control': 0.5, 'arbitrary': 1.0, 'pdcm': 1.0} # in ms
 bin_sizes_ms = [50, 10, 5, 2, 1]
+GDI_BIN_MS = 20
 
-for data in ['pdcm']:
+for data in ['OC_1', 'OC_2', 'control']: # next pdcm
+
+    sign_downsample_factor = int(GDI_BIN_MS / native_res_ms[data])
+    sign_spikes, _, _ = data_map[data](downsample_factor=sign_downsample_factor)
+    gdi_sign = robust_sign_inference(sign_spikes)
+
     for bin_size_ms in bin_sizes_ms:
 
         downsample_factor = int(bin_size_ms / native_res_ms[data])
@@ -39,10 +42,8 @@ for data in ['pdcm']:
         num_channels, num_time = binned_spikes.shape
         print(f'{num_channels} channels, {num_time} time points')
 
-        gdi_sign = robust_sign_inference(binned_spikes)
-
         # Mutual information
-        """
+        
         start_time = time.time()
         ci_mi, pk_mi = calculate_mutual_information(binned_spikes, max_lag=max_lag)
         end_time = time.time()
@@ -59,7 +60,7 @@ for data in ['pdcm']:
         np.save(f"{save_dir}/mutual_information_ci{suffix}_signed.npy", ci_mi_signed)
         plot_connectivity_matrix(pk_mi_signed, neuron_names, f"Mutual Information PK {suffix} GDI-signed", save_dir=save_dir, plot_val=False)
         plot_connectivity_matrix(ci_mi_signed, neuron_names, f"Mutual Information CI {suffix} GDI-signed", save_dir=save_dir, plot_val=False)
-        """
+        
         # Transfer entropy
 
         start_time = time.time()
@@ -80,7 +81,7 @@ for data in ['pdcm']:
         plot_connectivity_matrix(ci_te_signed, neuron_names, f"Transfer Entropy CI {suffix} GDI-signed", save_dir=save_dir, plot_val=False)
         
         # Conditional transfer entropy
-        """
+        
         start_time = time.time()
         pairwise_te = np.load(f"{save_dir}/transfer_entropy_pk{suffix}.npy")
         conditional_transfer_entropy = calculate_conditional_transfer_entropy(binned_spikes, pairwise_te, L=L)
@@ -93,4 +94,3 @@ for data in ['pdcm']:
         cte_signed = apply_gdi_sign(conditional_transfer_entropy, gdi_sign)
         np.save(f"{save_dir}/conditional_transfer_entropy{suffix}_signed.npy", cte_signed)
         plot_connectivity_matrix(cte_signed, neuron_names, f"Conditional Transfer Entropy {suffix} GDI-signed", save_dir=save_dir, plot_val=False)
-        """

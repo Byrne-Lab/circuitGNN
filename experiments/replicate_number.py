@@ -68,7 +68,7 @@ def sweep_dataset(data):
         return None
 
     sign_bin = round(GDI_BIN_MS / NATIVE_MS.get(data, 1.0))
-    binned_spikes, true_conn, _ = LOADERS[data](downsample_factor=sign_bin, plot=False)
+    binned_spikes, true_conn, _ = LOADERS[data](downsample_factor=sign_bin)
 
     mats, pass_flags = load_runs(results_loc)
     N = min(len(pass_flags), MAX_RUNS)
@@ -86,7 +86,7 @@ def sweep_dataset(data):
             continue  # leading failures: no consistent mean yet
         if count not in fit_by_count:
             cm = consistent_mean(aligned[:count])
-            fit_by_count[count] = calculate_fit(true_conn, cm, plot=False).signed_f1
+            fit_by_count[count] = calculate_fit(true_conn, cm).signed_f1
         curve[i] = fit_by_count[count]
     return {"N": N, "signed_f1": curve}
 

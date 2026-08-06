@@ -352,6 +352,109 @@ def load_OC_2_network(downsample_factor = 'auto'):
     return binned_spikes, true_conn, neuron_names
 
 
+def load_control_network(downsample_factor = 'auto'):
+    """
+    Load the control compartmental neuron simulation dataset, a variant of the
+    OC_1 / OC_2 networks over the same 14 neurons.
+
+    Parameters
+    ----------
+    downsample_factor : int or 'auto'
+        Bin size in ms. 'auto' (default) picks it by heuristic (see
+        circuit_gnn.optimal_bin_size). Native resolution is 0.5 ms.
+
+    Returns
+    -------
+    binned_spikes : ndarray (14, n_timebins)
+        Spike counts per bin. Voltages thresholded at -10 mV with a 15-sample
+        refractory period; 240 s total simulation.
+    true_conn : ndarray (14, 14)
+        Signed synaptic weight matrix [pre, post] in mV.
+        Positive = excitatory, negative = inhibitory, 0 = no connection.
+    neuron_names : list of str
+        Neuron label for each neuron parsed from ``spikes.head``.
+    """
+
+    GAP = 0.20
+
+    data_loc = 'datasets/control/spikes.out'
+    with open('datasets/control/spikes.head') as f:
+        neuron_names = [line.split('[')[1].split('.')[0] for line in f if line.startswith('V[')]
+
+    # Load true connectivity
+    true_conn = np.load(f"datasets/control/true_connectivity_{GAP:.2f}.npy")
+    true_conn = np.round(true_conn, 3)
+    true_conn = np.nan_to_num(true_conn, nan=0.0)
+
+    cmap = sns.diverging_palette(240, 10, as_cmap=True)
+    norm = TwoSlopeNorm(vmin=-5, vcenter=0, vmax=2)
+
+    # build annotation array: value if nonzero, else empty string
+    annot_str = [[f'{v:.3f}' if v != 0 else '' for v in row] for row in true_conn]
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(true_conn, xticklabels=neuron_names, yticklabels=neuron_names,
+                cmap=cmap, norm=norm,
+                annot=annot_str, fmt='',
+                cbar_kws={'label': 'Connection Strength (mV)'},
+                square=True)
+    plt.title('True Connectivity')
+    plt.xlabel('Postsynaptic')
+    plt.ylabel('Presynaptic')
+    plt.tight_layout()
+    plt.savefig("datasets/control/ground_truth.pdf", format='pdf')
+    plt.close()
+
+    df = pd.read_csv(data_loc, sep='\t', header=None, skipinitialspace=True)
+    voltage_data = df.iloc[:, 1:-1]
+    voltage_array_original = voltage_data.values
+    neuron_voltage_array = voltage_array_original.T
+
+    # convert voltages to spikes
+    thr = -10   # mv > thr
+    ra  = 15    # refractory period in samples
+
+    n_neurons, n_timepoints = neuron_voltage_array.shape
+    binned_spikes = np.zeros((n_neurons, n_timepoints), dtype=int)
+
+    for i in range(n_neurons):
+        mv = neuron_voltage_array[i]
+        sp = np.where(mv > thr)[0]                             # sp = find(mv > thr)
+        if sp.size > 0:
+            mask = np.concatenate(([True], np.diff(sp) > ra))  # sp([1; diff(sp)>ra])
+            sp = sp[mask]
+            binned_spikes[i, sp] = 1
+
+    print(binned_spikes.shape)
+
+    # downsample (native resolution is 0.5 ms; resolve 'auto' via signed-edge stability)
+    downsample_factor = resolve_downsample(downsample_factor, binned_spikes, 0.5)
+    binned_spikes = binned_spikes[:, :binned_spikes.shape[1] // downsample_factor * downsample_factor]
+    binned_spikes = binned_spikes.reshape(binned_spikes.shape[0], -1, downsample_factor).sum(2)
+    print(binned_spikes.shape)
+    print("Binned spikes possibilities:", np.unique(binned_spikes))
+
+    # plot
+    bin_size_s = 0.5e-3 * downsample_factor
+    spike_times = []
+    for i in range(binned_spikes.shape[0]):
+        times = np.where(binned_spikes[i, :] > 0)[0] * bin_size_s
+        spike_times.append(times)
+
+    plt.figure(figsize=(10, 5))
+    plt.eventplot(spike_times, orientation='horizontal', linelengths=0.8, color='black')
+    plt.yticks(range(len(neuron_names)), neuron_names)
+    plt.gca().invert_yaxis()
+    plt.xlabel('Time (s)')
+    plt.ylabel('Neuron')
+    plt.title('Spike Raster')
+    plt.tight_layout()
+    plt.savefig("datasets/control/raster_plot.pdf", format='pdf')
+    plt.close()
+
+    return binned_spikes, true_conn, neuron_names
+
+
 def load_small_circuit_A_network(downsample_factor = 'auto'):
     """
     Load the small circuit A simulation dataset from Cai et al.
@@ -409,7 +512,7 @@ def load_small_circuit_A_network(downsample_factor = 'auto'):
 
     # convert voltages to spikes
     thr = -10   # mv > thr
-    ra  = 15    # refractory period in samples
+    ra  = 15    # refractory period in bins
 
     n_neurons, n_timepoints = neuron_voltage_array.shape
     binned_spikes = np.zeros((n_neurons, n_timepoints), dtype=int)
@@ -562,7 +665,7 @@ def pdcm_hidden_indices(n_neurons, hide_frac, hide_seed=0):
     return kept, hidden
 
 
-def _load_pdcm_dir(data_dir, downsample_factor='auto', max_time_s=None, plot=True,
+def _load_pdcm_dir(data_dir, downsample_factor='auto', max_time_s=None,
                    hide_frac=0.0, hide_seed=0):
     """For PDCM NetPyNE dataset (base, scaling sizes, large).
 
@@ -574,8 +677,6 @@ def _load_pdcm_dir(data_dir, downsample_factor='auto', max_time_s=None, plot=Tru
         Bin size in ms. 'auto' (default) picks it by heuristic (see
         circuit_gnn.optimal_bin_size). Native resolution is 1 ms.
     max_time_s : float or None
-    plot : bool
-        Write the raster / ground-truth PDFs into ``data_dir``.
     hide_frac : float
         Fraction of neurons to hide. ``true_conn`` and ``neuron_names`` are reduced to the observed submatrix.
         The hidden set is random and deterministic in ``hide_seed``.
@@ -634,7 +735,8 @@ def _load_pdcm_dir(data_dir, downsample_factor='auto', max_time_s=None, plot=Tru
         n_neurons     = len(kept)
         print(f"Hiding {hide_frac:.0%} (seed={hide_seed}): " f"{n_neurons} of {n_full} neurons observed")
 
-    if not plot or hide_frac > 0 or max_time_s is not None:
+    # subsets would overwrite the canonical raster / ground-truth PDFs for this data_dir
+    if hide_frac > 0 or max_time_s is not None:
         return binned_spikes, true_conn, neuron_names
 
     spike_times_s = [np.where(binned_spikes[i] > 0)[0] * downsample_factor / 1000 for i in range(n_neurons)]
@@ -658,7 +760,7 @@ _PDCM_SIZES = ('0p002', '0p010', '0p025', '0p050')
 
 
 def load_pdcm_network(downsample_factor='auto',
-                      size=None, max_time_s=None, plot=True,
+                      size=None, max_time_s=None,
                       hide_frac=0.0, hide_seed=0):
     """
     Load a PDCM NetPyNE simulation dataset, optionally at a given network size
@@ -675,8 +777,6 @@ def load_pdcm_network(downsample_factor='auto',
     max_time_s : float or None
         Keep only the first ``max_time_s`` seconds (datasets are 2000 s). Use to
         sweep recording length.
-    plot : bool
-        Write raster / ground-truth PDFs (turn off during a replicate sweep).
     hide_frac, hide_seed : float, int
         Hide a uniform-random ``hide_frac`` of neurons.
 
@@ -693,36 +793,41 @@ def load_pdcm_network(downsample_factor='auto',
             raise ValueError(f"unknown pdcm size {size!r}; options: {_PDCM_SIZES}")
         data_dir = f'datasets/pdcm_{size}'
     return _load_pdcm_dir(data_dir, downsample_factor=downsample_factor,
-                          max_time_s=max_time_s, plot=plot,
+                          max_time_s=max_time_s,
                           hide_frac=hide_frac, hide_seed=hide_seed)
 
 
-def load_allen_network(downsample_factor='auto',
-                       max_time_s=None, data_dir='datasets/allen'):
+def load_allen_network(downsample_factor='auto', max_time_s=None,
+                       data_dir='datasets/allen/prep_793224716'):
     """
-    Load the Allen Visual-Coding Neuropixels hippocampal dataset used by
-    Medvedeva et al. 2025 (session 715093703, probe 810755803, regions
-    CA1/CA3/DG). Built by datasets/allen/prepare_allen.py and stored in the same
-    .npy layout as the simulated datasets (spkt/spkid/pop_labels/sim_duration_ms),
-    with spike times in ms.
+    Load an Allen Visual-Coding Neuropixels hippocampal spontaneous-activity
+    dataset. Built by datasets/allen/prepare_allen.py -- which fixes the session
+    and the regions -- and stored in the same .npy layout as the simulated
+    datasets (spkt/spkid/pop_labels/sim_duration_ms), spike times in ms.
+
+    prepare_allen.py keeps the single longest spontaneous block, so the timeline
+    is one contiguous span. The intrinsic hippocampal circuit is what the
+    trisynaptic-loop question is about, and dropping the stimulus epochs removes
+    the stimulus-locked common input that would otherwise inflate apparent
+    connectivity unevenly across CA1 and CA3.
 
     This is in-vivo data, so there is NO ground-truth connectivity:
-    ``true_conn`` is an all-zeros placeholder. Region identity is
-    encoded in ``neuron_names`` ('<region>_u<unit_id>'), ordered CA1->CA3->DG so
-    the raster and learned matrix are block-structured.
+    ``true_conn`` is an all-zeros placeholder. Region identity is encoded in
+    ``neuron_names`` ('<region>_<probe>_u<unit_id>'), grouped in prepare_allen's
+    REGIONS order so the raster and learned matrix are block-structured.
 
     Parameters
     ----------
     downsample_factor : int or 'auto'
-        Bin size in ms. 'auto' (default) picks it by heuristic (see
+        Bin size in ms. 'auto' picks it by heuristic (see
         circuit_gnn.optimal_bin_size). Native resolution is 1 ms.
-        NB: 'auto' builds a 1 ms native array over the whole ~2.68 h recording
-        (~3 GB for 92 neurons); pass an explicit bin (or max_time_s) to avoid that.
+        NB: directionality results depend on this. Schaffer collateral delays
+        are a few ms, so bins much larger than that smear i->j and j->i
+        together; sweep 1 / 2 / 5 ms and check the asymmetry sign is stable.
     max_time_s : float or None
-        If set, keep only spikes in the first ``max_time_s`` seconds. The full
-        recording is ~2.68 h; the paper also fits on 500 s / 1000 s subsets.
+        Keep only the first ``max_time_s`` seconds of the extracted block.
     data_dir : str
-        Directory holding the .npy files (default 'datasets/allen').
+        Directory holding the .npy files written by prepare_allen.py.
 
     Returns
     -------
@@ -731,7 +836,7 @@ def load_allen_network(downsample_factor='auto',
     true_conn : ndarray (n_neurons, n_neurons)
         All-zeros placeholder (no ground truth for in-vivo data).
     neuron_names : list of str
-        '<region>_u<unit_id>' per neuron, ordered by region.
+        '<region>_<probe>_u<unit_id>' per neuron, ordered by region.
     """
     spkt       = np.load(f'{data_dir}/spkt.npy')          # ms
     spkid      = np.load(f'{data_dir}/spkid.npy')
@@ -748,8 +853,6 @@ def load_allen_network(downsample_factor='auto',
         spkt, spkid = spkt[keep], spkid[keep]
         sim_dur_ms = min(sim_dur_ms, window_ms)
 
-    print(spkt.shape, spkid.shape)
-
     # resolve 'auto' from a native 1 ms binning before choosing the final bin
     if isinstance(downsample_factor, str):
         native_bins = int(sim_dur_ms // 1)
@@ -765,8 +868,8 @@ def load_allen_network(downsample_factor='auto',
     valid = (t_idx >= 0) & (t_idx < n_bins)
     np.add.at(binned_spikes, (spkid.astype(int)[valid], t_idx[valid]), 1)
 
-    print(f"Loaded Allen hippocampal network: {n_neurons} neurons, "
-          f"{sim_dur_ms:.0f} ms recording")
+    print(f"Loaded Allen hippocampal spontaneous network: {n_neurons} neurons, "
+          f"{sim_dur_ms / 1000:.1f} s of spontaneous activity")
     print(f"Binned spikes shape: {binned_spikes.shape}  "
           f"(bin size = {downsample_factor} ms)")
     print("Units per region: "
@@ -790,9 +893,11 @@ def load_allen_network(downsample_factor='auto',
         i = j
     plt.xlabel('Time (s)')
     plt.ylabel('Neuron Index')
-    plt.title('Allen hippocampal spike raster (CA1/CA3/DG)')
+    plt.title('Allen hippocampal spontaneous raster')
     plt.tight_layout()
-    plt.savefig(f'{data_dir}/raster_plot.pdf', format='pdf')
+    # not raster_plot.pdf: that is prepare_allen's full-block raster. This one is
+    # what the model sees -- binned, and truncated by max_time_s.
+    plt.savefig(f'{data_dir}/raster_binned.pdf', format='pdf')
     plt.close()
 
     return binned_spikes, true_conn, neuron_names

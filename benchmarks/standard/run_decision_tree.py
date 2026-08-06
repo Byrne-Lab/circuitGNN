@@ -19,19 +19,23 @@ from circuit_gnn.utils import *
 data_map = {
     'OC_1': load_OC_1_network,
     'OC_2': load_OC_2_network,
+    'control': load_control_network,
     'arbitrary': load_arbitrary_network,
     'pdcm': load_pdcm_network,
 }
 
-for data in ['pdcm']:
+for data in ['OC_1', 'OC_2', 'control', 'pdcm']:
 
     # 1 ms bins to accurately get spike times
-    if data in ('OC_1', 'OC_2'):
-        downsample_factor = 2  # 1 ms
+    if data in ('OC_1', 'OC_2', 'control'):
+        downsample_factor = 2       # 1 ms
+        sign_downsample_factor = 40  # 20 ms
     elif data == 'arbitrary':
-        downsample_factor = 1  # 1 ms
+        downsample_factor = 1       # 1 ms
+        sign_downsample_factor = 20  # 20 ms
     elif data == 'pdcm':
-        downsample_factor = 1  # 1 ms
+        downsample_factor = 1       # 1 ms
+        sign_downsample_factor = 20  # 20 ms
 
     window_bins = 50        # 50 ms history
     subinterval_bins = 10   # 10 ms subintervals
@@ -44,7 +48,8 @@ for data in ['pdcm']:
     num_channels, num_time = binned_spikes.shape
     print(f'\n=== {data}: {num_channels} channels, {num_time} time points ===')
 
-    gdi_sign = robust_sign_inference(binned_spikes)
+    sign_spikes, _, _ = data_map[data](downsample_factor=sign_downsample_factor)
+    gdi_sign = robust_sign_inference(sign_spikes)
 
     # Individual MCC matrix (one model per source–target pair)
     start = time.time()

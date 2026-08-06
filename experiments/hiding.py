@@ -83,7 +83,7 @@ def evaluate(frac):
     print(f"  {len(mats)} runs")
 
     # observed-only spikes and ground truth (the loader reduces both to the kept neurons)
-    binned_spikes, true_conn, _ = load_pdcm_network(downsample_factor=GDI_BIN_MS, hide_frac=frac, hide_seed=HIDE_SEED, plot=False)
+    binned_spikes, true_conn, _ = load_pdcm_network(downsample_factor=GDI_BIN_MS, hide_frac=frac, hide_seed=HIDE_SEED)
 
     stack = np.stack(align_matrices(mats, binned_spikes=binned_spikes), axis=0)
     mask = get_consistent_connections(stack, threshold=CONSISTENCY_THRESHOLD)
@@ -99,7 +99,7 @@ def evaluate(frac):
         plot_pdcm_matrix(embed(matrix, kept, len(pop_labels)), pop_labels,
                          method_name=name, save_dir=results_loc, blackout=hidden)
 
-    res = calculate_fit(true_conn, consistent_mean, plot=False)
+    res = calculate_fit(true_conn, consistent_mean)
     print(f"  ({len(mats)} runs)")
     return res.signed_f1, res.nie, res.signed_precision, res.signed_recall
 

@@ -33,7 +33,7 @@ OUT_DIR = "figures"
 CACHE_CSV = f"{OUT_DIR}/metrics_scaling.csv"
 MATRIX_DIR = f"{OUT_DIR}/scaling"
 
-CURVE_COLORS = ["#1b5e20", "#66bb6a"]      # dark green -> light green, one per size
+CURVE_COLORS = ["#1b5e20", "#66bb6a"]     
 MARKER_SIZE = 5
 
 DEFAULT_CLIM = (-0.010, 0.005)
@@ -85,7 +85,7 @@ def evaluate(size, dur_s):
     mats = load_passing_runs(results_loc)
 
     binned_spikes, true_conn, _ = load_pdcm_network(
-        downsample_factor=GDI_BIN_MS, size=size, max_time_s=dur_s, plot=False)
+        downsample_factor=GDI_BIN_MS, size=size, max_time_s=dur_s)
 
     stack = np.stack(align_matrices(mats, binned_spikes=binned_spikes), axis=0)
     mask = get_consistent_connections(stack, threshold=CONSISTENCY_THRESHOLD)
@@ -99,7 +99,7 @@ def evaluate(size, dur_s):
     plot_pdcm_matrix(mean, pop_labels, method_name="mean", save_dir=results_loc)
     plot_pdcm_matrix(consistent_mean, pop_labels, method_name="mean_consistent", save_dir=results_loc)
 
-    res = calculate_fit(true_conn, consistent_mean, plot=False)
+    res = calculate_fit(true_conn, consistent_mean)
     print(f"  ({len(mats)} runs)")
     return res.signed_f1, res.nie, res.signed_precision, res.signed_recall
 

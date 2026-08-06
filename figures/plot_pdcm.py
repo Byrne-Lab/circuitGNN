@@ -189,3 +189,6 @@ if __name__ == '__main__':
 
     decision_tree = np.load('datasets/pdcm/baseline/decision_tree_mcc_threshold_signed.npy')  
     plot_matrix(decision_tree, pop_labels, vmin=-0.1, vmax=0.4, title='Decision Tree Connectivity Matrix', cbar_label='Connection strength', fname='decision_tree.pdf')
+
+    ctm_di = np.load('datasets/pdcm/baseline/ctm_di.npy')
+    plot_matrix(ctm_di, pop_labels, vmin=-0.025, vmax=0.1, title='CTM-DI Connectivity Matrix', cbar_label='Connection strength', fname='ctm_di.pdf')  

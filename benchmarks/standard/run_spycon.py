@@ -10,6 +10,7 @@ import numpy as np
 import os
 import time
 import itertools
+import traceback
 from circuit_gnn.data import *
 from circuit_gnn.utils import *
 from spycon.coninf import CoincidenceIndex, Smoothed_CCG, directed_STTC, GLMCC, GLMPP
@@ -17,6 +18,7 @@ from spycon.coninf import CoincidenceIndex, Smoothed_CCG, directed_STTC, GLMCC, 
 data_map = {
     'OC_1':      load_OC_1_network,
     'OC_2':      load_OC_2_network,
+    'control':   load_control_network,
     'arbitrary': load_arbitrary_network,
     'pdcm':      load_pdcm_network,
 }
@@ -24,6 +26,7 @@ data_map = {
 bin_size_map = {
     'OC_1':      lambda f: 0.5e-3 * f,
     'OC_2':      lambda f: 0.5e-3 * f,
+    'control':   lambda f: 0.5e-3 * f,
     'arbitrary': lambda f: 1e-3 * f,
     'pdcm':      lambda f: f / 1000.0,
 }
@@ -68,11 +71,16 @@ def threshold_weights(weight_mat, score_mat, threshold):
     return np.where(score_mat > threshold, weight_mat, 0.0)
 
 
-# Axes measured in seconds; everything else is tagged as a bare number.
-_TIME_AXES = {'binsize', 'syn_tau', 'syn_delay', 'delta_t', 'tau'}
+# Axes measured in seconds
+_TIME_AXES = {'binsize', 'syn_tau', 'syn_delay', 'delta_t', 'tau',
+              'gauss_std', 'ccg_tau', 'syn_window'}
 
 
 def _fmt(k, v):
+    if isinstance(v, bool):          # before the numeric branch: bool is an int
+        return str(v)
+    if isinstance(v, (tuple, list)):  # e.g. syn_window=(0.8e-3, 5.8e-3)
+        return "-".join(_fmt(k, x) for x in v)
     return f"{v * 1e3:g}ms" if k in _TIME_AXES else f"{v:g}"
 
 
@@ -88,7 +96,7 @@ def factorial(cls, prefix, **axes):
 
 
 def ofat(cls, prefix, **axes):
-    # one-factor-at-a-time: vary each axis, holding the others at their defaults
+    # one-factor-at-a-time
     out = {}
     for key, values in axes.items():
         for v in values:
@@ -96,10 +104,10 @@ def ofat(cls, prefix, **axes):
     return out
 
 
-for data in ['pdcm']:
+for data in ['OC_1', 'OC_2', 'control', 'pdcm']:
 
     # 1 ms bins to accurately get spike times
-    if data in ('OC_1', 'OC_2'):
+    if data in ('OC_1', 'OC_2', 'control'):
         downsample_factor = 2  # 1 ms
     elif data == 'arbitrary':
         downsample_factor = 1  # 1 ms
@@ -126,38 +134,42 @@ for data in ['pdcm']:
         'glmcc_default': GLMCC(),
         'glmpp_default': GLMPP(),
     }
-    # methods.update(factorial(CoincidenceIndex, 'ci',
-    #    binsize=[1e-3, 2e-3, 5e-3],
-    #    syn_tau=[3e-3, 6e-3, 10e-3, 20e-3]))
 
     methods.update(factorial(Smoothed_CCG, 'sccg',
         binsize=[1e-3, 2e-3, 5e-3],
         hf=[0.4, 0.6, 0.8]))
-    
+    methods.update(ofat(Smoothed_CCG, 'sccg',
+        syn_window=[(0.5e-3, 4e-3), (1e-3, 10e-3), (2e-3, 20e-3)],
+        alpha=[0.01, 0.05],
+        deconv_ccg=[True]))
+
     methods.update(ofat(directed_STTC, 'dsttc',
-        delta_t=[3e-3, 5e-3, 7e-3, 10e-3, 20e-3, 30e-3]))
+        delta_t=[3e-3, 5e-3, 7e-3, 10e-3, 20e-3, 30e-3],
+        num_surrogates=[20, 100],
+        alpha=[1e-2, 5e-2]))
+    methods.update(factorial(directed_STTC, 'dsttc',
+        jitter=[True],
+        jitter_factor=[3.0, 7.0, 15.0]))
 
     methods.update(factorial(GLMCC, 'glmcc',
         binsize=[1e-3],
         syn_delay=[1e-3, 3e-3, 5e-3, 10e-3]))
 
-    methods.update(ofat(GLMPP, 'glmpp',
-        tau=[2e-3, 5e-3, 10e-3, 20e-3]))
-     
+
+    print(f'  {len(methods)} variants queued')
     for name, method in methods.items():
+        out_npy = f"{save_dir}/spycon_{name}.npy"
+
         start = time.time()
         result = method.infer_connectivity(times, ids)
         elapsed = time.time() - start
-        print(f"  {name} time: {elapsed / 60:.2f} min")
 
         weight_mat, score_mat = result_to_matrices(result, num_channels)
         threshold = float(result.threshold)
         weight_thr = threshold_weights(weight_mat, score_mat, threshold)
-        print(f"    threshold ({result.method}) = {threshold:.4g}")
+        n_edges = int(np.count_nonzero(weight_thr))
+        print(f"  {name} time: {elapsed / 60:.2f} min")
+        print(f"    threshold ({result.method}) = {threshold:.4g}, {n_edges} edges")
 
-        # np.save(f"{save_dir}/spycon_{name}_W.npy", weight_mat)
-        # np.save(f"{save_dir}/spycon_{name}_S.npy", score_mat)
-        np.save(f"{save_dir}/spycon_{name}.npy", weight_thr)
-        # plot_connectivity_matrix(weight_mat, neuron_names, f"Spycon {name.upper()} W", save_dir=save_dir, plot_val=False)
-        # plot_connectivity_matrix(score_mat, neuron_names, f"Spycon {name.upper()} S", save_dir=save_dir, plot_val=False)
+        np.save(out_npy, weight_thr)
         plot_connectivity_matrix(weight_thr, neuron_names, f"Spycon {name.upper()}", save_dir=save_dir, plot_val=False)

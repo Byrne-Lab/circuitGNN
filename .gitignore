@@ -20,9 +20,9 @@ results*
 random*
 version_*
 AttentionGNN
-run_allen.py
 figures/*.pdf
 figures/*.csv
 figures/pdcm
 figures/scaling
 figures/hiding
+figures/operant*

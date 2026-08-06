@@ -12,7 +12,7 @@ import copy
 import numpy.matlib as matlib
 from scipy.optimize import minimize_scalar
 from sklearn.metrics import (precision_score, recall_score, f1_score,
-                             matthews_corrcoef, roc_auc_score, roc_curve)
+                             roc_auc_score, roc_curve)
 from collections import namedtuple
 
 # Result of calculate_fit. Fields are accessed by name (e.g. res.overall_f1).
@@ -20,7 +20,7 @@ FitResult = namedtuple("FitResult", [
     "cosine", "pearson", "spearman",
     "overall_precision", "overall_recall", "overall_f1",
     "signed_precision", "signed_recall", "signed_f1",
-    "mcc_unsigned", "mcc_signed", "auroc", "nie",
+    "auroc", "nie",
 ])
 
 
@@ -134,7 +134,51 @@ def plot_pdcm_matrix(matrix, pop_labels, method_name='GNN', save_dir='results', 
     plt.close()
 
 
-def calculate_fit(true_conn, learned_conn, plot=True):
+def plot_region_matrix(matrix, group_labels, groups_ordered, method_name='GNN',
+                       save_dir='results', title=None, cbar_label='Connection strength'):
+    os.makedirs(save_dir, exist_ok=True)
+    matrix = np.asarray(matrix, dtype=float)
+    group_labels = np.asarray(group_labels)
+
+    cmap = sns.diverging_palette(240, 10, as_cmap=True)
+    vmin = min(np.nanmin(matrix), -1e-6)
+    vmax = max(np.nanmax(matrix),  1e-6)
+    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(matrix, xticklabels=False, yticklabels=False,
+                cmap=cmap, norm=norm,
+                cbar_kws={'label': cbar_label}, square=True)
+
+    boundaries, tick_centers, tick_labels = [], [], []
+    cursor = 0
+    for group in groups_ordered:
+        count = int(np.sum(group_labels == group))
+        if count == 0:
+            continue
+        boundaries.append(cursor)
+        tick_centers.append(cursor + count / 2)
+        tick_labels.append(group)
+        cursor += count
+    boundaries.append(cursor)
+
+    ax = plt.gca()
+    for b in boundaries:
+        ax.axhline(b, color='k', linewidth=0.5)
+        ax.axvline(b, color='k', linewidth=0.5)
+    ax.set_xticks(tick_centers); ax.set_xticklabels(tick_labels, fontsize=8)
+    ax.set_yticks(tick_centers); ax.set_yticklabels(tick_labels, fontsize=8, rotation=0)
+
+    plt.title(title if title is not None else f'{method_name} Connectivity Matrix')
+    plt.xlabel('Postsynaptic')
+    plt.ylabel('Presynaptic')
+    plt.tight_layout()
+    save_path = os.path.join(save_dir, f"{method_name.replace(' ', '_').lower()}.pdf")
+    plt.savefig(save_path, format='pdf')
+    plt.close()
+
+
+def calculate_fit(true_conn, learned_conn):
 
     # rescaling learned_conn following Yoon et al. 2025
     def objective(s):
@@ -145,7 +189,6 @@ def calculate_fit(true_conn, learned_conn, plot=True):
     learned_conn_rescaled = s_opt * learned_conn
 
     mask = ~np.eye(true_conn.shape[0], dtype=bool)
-    n = true_conn.shape[0]
 
     # Continuous metrics
     v1 = true_conn[mask].flatten()
@@ -163,130 +206,21 @@ def calculate_fit(true_conn, learned_conn, plot=True):
     overall_precision = precision_score(tb_m, lb_m, zero_division=0)
     overall_recall    = recall_score(tb_m, lb_m, zero_division=0)
     overall_f1        = f1_score(tb_m, lb_m, zero_division=0)
-    mcc_unsigned      = matthews_corrcoef(tb_m, lb_m)
     auroc = roc_auc_score(tb_m, np.abs(learned_conn[mask])) if 0 < tb_m.sum() < tb_m.size else float('nan')
 
-    # raw counts retained for the classification-map plot
-    tp = int(np.sum((lb_m == 1) & (tb_m == 1)))
-    fp = int(np.sum((lb_m == 1) & (tb_m == 0)))
-    fn = int(np.sum((lb_m == 0) & (tb_m == 1)))
-
-    # signed TP/FP/FN
-    tp_pos = (learned_conn[mask] > 0) & (true_conn[mask] > 0)
-    tp_neg = (learned_conn[mask] < 0) & (true_conn[mask] < 0)
-    tp_s   = tp_pos | tp_neg
-    fp_s   = (lb_m == 1) & ((tb_m == 0) | (np.sign(learned_conn[mask]) != np.sign(true_conn[mask])))
-    fn_s   = (lb_m == 0) & (tb_m == 1)
-
-    tp_signed = np.sum(tp_s)
-    fp_signed = np.sum(fp_s)
-    fn_signed = np.sum(fn_s)
-
-    signed_precision = tp_signed / (tp_signed + fp_signed) if (tp_signed + fp_signed) > 0 else 0
-    signed_recall    = tp_signed / (tp_signed + fn_signed) if (tp_signed + fn_signed) > 0 else 0
-    signed_f1        = 2 * (signed_precision * signed_recall) / (signed_precision + signed_recall) if (signed_precision + signed_recall) > 0 else 0
-
-    # MCC
-    tn_signed = mask.sum() - tp_signed - fp_signed - fn_signed
-    denom = np.sqrt(float(tp_signed + fp_signed) * (tp_signed + fn_signed) *
-                    (tn_signed + fp_signed) * (tn_signed + fn_signed))
-    mcc_signed = (tp_signed * tn_signed - fp_signed * fn_signed) / denom if denom > 0 else 0.0
-
-    # plot
-    if plot:
-        # classification maps
-        clf_map  = np.full((n, n), np.nan)
-        sign_map = np.full((n, n), np.nan)
-
-        flat = np.zeros(lb_m.shape, dtype=int)
-        flat[(lb_m == 1) & (tb_m == 1)] = 1   # TP
-        flat[(lb_m == 1) & (tb_m == 0)] = 2   # FP
-        flat[(lb_m == 0) & (tb_m == 1)] = 3   # FN
-        clf_map[mask] = flat
-
-        signed_flat = np.zeros(lb_m.shape, dtype=int)
-        signed_flat[tp_s] = 1
-        signed_flat[fp_s] = 2
-        signed_flat[fn_s] = 3
-        sign_map[mask] = signed_flat
-
-        colors = ["#d0d0d0", "#2ecc71", "#e74c3c", "#e67e22"]  # TN, TP, FP, FN
-        cmap   = ListedColormap(colors)
-        cmap.set_bad(color="white")  # diagonal NaN → white
-
-        vmax = max(np.abs(true_conn).max(), np.abs(learned_conn).max())
-
-        fig, axes = plt.subplots(2, 2, figsize=(13, 11))
-        fig.suptitle("calculate_fit — Visual Verification", fontsize=14, fontweight="bold")
-
-        saturated_cmap = make_saturated_rdbu(cut=0.05)
-        # true connectivity
-        ax = axes[0, 0]
-        im = ax.imshow(true_conn, cmap=saturated_cmap, aspect="auto", vmin=-0.5, vmax=0.5)
-        overlay_zeros(ax, true_conn)
-        ax.set_title("True Connectivity")
-        plt.colorbar(im, ax=ax)
-
-        # learned connectivity
-        ax = axes[0, 1]
-        im = ax.imshow(learned_conn, cmap=saturated_cmap, aspect="auto", vmin=-0.01, vmax=0.01)
-        overlay_zeros(ax, learned_conn)
-        ax.set_title("Learned Connectivity")
-        plt.colorbar(im, ax=ax)
-
-        # unsigned classification map
-        ax = axes[1, 0]
-        ax.imshow(clf_map, cmap=cmap, vmin=0, vmax=3, aspect="auto")
-        ax.set_title(f"Unsigned Classification Map\n"
-                     f"TP={tp}  FP={fp}  FN={fn}\n"
-                     f"P={overall_precision:.3f}  R={overall_recall:.3f}  F1={overall_f1:.3f}")
-
-        # signed classification map
-        ax = axes[1, 1]
-        ax.imshow(sign_map, cmap=cmap, vmin=0, vmax=3, aspect="auto")
-        ax.set_title(f"Signed Classification Map\n"
-                     f"TP_s={tp_signed}  FP_s={fp_signed}  FN_s={fn_signed}\n"
-                     f"P={signed_precision:.3f}  R={signed_recall:.3f}  F1={signed_f1:.3f}")
-
-        patches = [
-            mpatches.Patch(color=colors[0], label="TN"),
-            mpatches.Patch(color=colors[1], label="TP"),
-            mpatches.Patch(color=colors[2], label="FP"),
-            mpatches.Patch(color=colors[3], label="FN"),
-        ]
-        for ax in axes[1]:
-            ax.legend(handles=patches, loc="upper right", fontsize=8)
-
-        fig.text(0.5, 0.01,
-                 f"Cosine={cos_sim:.4f}   Pearson r={pearson:.4f}   Spearman ρ={rho:.4f}",
-                 ha="center", fontsize=11, style="italic",
-                 bbox=dict(boxstyle="round", facecolor="lightyellow", alpha=0.8))
-
-        plt.tight_layout(rect=[0, 0.04, 1, 1])
-        plt.show()
+    # three-class
+    true_lbl = np.sign(true_conn[mask]).astype(int)
+    pred_lbl = np.sign(learned_conn[mask]).astype(int)
+    signed_precision = precision_score(true_lbl, pred_lbl, labels=[1, -1], average='micro', zero_division=0)
+    signed_recall    = recall_score(true_lbl, pred_lbl, labels=[1, -1], average='micro', zero_division=0)
+    signed_f1        = f1_score(true_lbl, pred_lbl, labels=[1, -1], average='micro', zero_division=0)
 
     return FitResult(
         cosine=cos_sim, pearson=pearson, spearman=rho,
         overall_precision=overall_precision, overall_recall=overall_recall, overall_f1=overall_f1,
         signed_precision=signed_precision, signed_recall=signed_recall, signed_f1=signed_f1,
-        mcc_unsigned=mcc_unsigned, mcc_signed=mcc_signed, auroc=auroc, nie=nie,
+        auroc=auroc, nie=nie,
     )
-
-
-def _draw_confusion(ax, tp, fp, fn, tn, mcc, title):
-    # 2x2 confusion matrix (rows = actual +/-, cols = predicted +/-) annotated with the MCC formula.
-    M = np.array([[tp, fn], [fp, tn]], dtype=float)
-    ax.imshow(M, cmap="Blues", aspect="auto")
-    cells = [[f"TP\n{tp}", f"FN\n{fn}"], [f"FP\n{fp}", f"TN\n{tn}"]]
-    thresh = M.max() / 2 if M.max() > 0 else 0.5
-    for i in range(2):
-        for j in range(2):
-            ax.text(j, i, cells[i][j], ha="center", va="center", fontsize=11,
-                    color="white" if M[i, j] > thresh else "black")
-    ax.set_xticks([0, 1]); ax.set_xticklabels(["pred +", "pred −"])
-    ax.set_yticks([0, 1]); ax.set_yticklabels(["actual +", "actual −"])
-    ax.set_title(f"{title} = {mcc:.3f}\n(TP·TN − FP·FN) / √((TP+FP)(TP+FN)(TN+FP)(TN+FN))",
-                 fontsize=8)
 
 
 def plot_metric_verification(true_conn, learned_conn, save_dir, method_name="consistent mean"):
@@ -294,8 +228,7 @@ def plot_metric_verification(true_conn, learned_conn, save_dir, method_name="con
 
     Mirrors the computations in calculate_fit so the table/CSV numbers can be
     visually verified: scatter plots for cosine/pearson/spearman, classification
-    maps for the F1s, confusion matrices for the MCCs, an ROC curve for AUROC, and
-    the rescaled residual map for NIE.
+    maps for the F1s, an ROC curve for AUROC, and the rescaled residual map for NIE.
     """
     os.makedirs(save_dir, exist_ok=True)
     n = true_conn.shape[0]
@@ -321,25 +254,23 @@ def plot_metric_verification(true_conn, learned_conn, save_dir, method_name="con
     tp = int(np.sum((lb_m == 1) & (tb_m == 1)))
     fp = int(np.sum((lb_m == 1) & (tb_m == 0)))
     fn = int(np.sum((lb_m == 0) & (tb_m == 1)))
-    tn = int(mask.sum() - tp - fp - fn)
-    prec = tp / (tp + fp) if (tp + fp) else 0.0
-    rec = tp / (tp + fn) if (tp + fn) else 0.0
-    f1 = 2 * prec * rec / (prec + rec) if (prec + rec) else 0.0
-    du = np.sqrt(float(tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
-    mcc_u = (tp * tn - fp * fn) / du if du > 0 else 0.0
+    prec = precision_score(tb_m, lb_m, zero_division=0)
+    rec = recall_score(tb_m, lb_m, zero_division=0)
+    f1 = f1_score(tb_m, lb_m, zero_division=0)
 
-    # signed confusion (sign flip counts as FP only)
+    # signed: micro-averaged over the two edge classes (see calculate_fit)
+    true_lbl = np.sign(true_conn[mask]).astype(int)
+    pred_lbl = np.sign(learned_conn[mask]).astype(int)
+    precs = precision_score(true_lbl, pred_lbl, labels=[1, -1], average='micro', zero_division=0)
+    recs = recall_score(true_lbl, pred_lbl, labels=[1, -1], average='micro', zero_division=0)
+    f1s = f1_score(true_lbl, pred_lbl, labels=[1, -1], average='micro', zero_division=0)
+
+    # cell-partition counts, for the map colours
     tp_s = ((learned_conn[mask] > 0) & (true_conn[mask] > 0)) | \
            ((learned_conn[mask] < 0) & (true_conn[mask] < 0))
     fp_s = (lb_m == 1) & ((tb_m == 0) | (np.sign(learned_conn[mask]) != np.sign(true_conn[mask])))
     fn_s = (lb_m == 0) & (tb_m == 1)
     tps, fps, fns = int(np.sum(tp_s)), int(np.sum(fp_s)), int(np.sum(fn_s))
-    tns = int(mask.sum() - tps - fps - fns)
-    precs = tps / (tps + fps) if (tps + fps) else 0.0
-    recs = tps / (tps + fns) if (tps + fns) else 0.0
-    f1s = 2 * precs * recs / (precs + recs) if (precs + recs) else 0.0
-    ds = np.sqrt(float(tps + fps) * (tps + fns) * (tns + fps) * (tns + fns))
-    mcc_s = (tps * tns - fps * fns) / ds if ds > 0 else 0.0
 
     # AUROC (rank edges by |learned|)
     if 0 < tb_m.sum() < tb_m.size:
@@ -367,7 +298,8 @@ def plot_metric_verification(true_conn, learned_conn, save_dir, method_name="con
     clf_patches = [mpatches.Patch(color=clf_colors[k], label=lbl)
                    for k, lbl in enumerate(["TN", "TP", "FP", "FN"])]
 
-    fig, axes = plt.subplots(3, 3, figsize=(16, 15))
+    # row 0: continuous metrics, row 1: classification metrics
+    fig, axes = plt.subplots(2, 4, figsize=(21, 10))
     fig.suptitle(f"Metric verification ({method_name})", fontsize=15, fontweight="bold")
 
     # cosine
@@ -393,6 +325,16 @@ def plot_metric_verification(true_conn, learned_conn, save_dir, method_name="con
     ax.set_xlabel("rank(true)"); ax.set_ylabel("rank(learned)")
     ax.set_title(f"Spearman ρ = {rho:.3f}\n(Pearson on ranks)")
 
+    # NIE
+    ax = axes[0, 3]
+    resid_map = np.where(np.eye(n, dtype=bool), np.nan, residual_full)
+    vmax = np.nanmax(np.abs(resid_map))
+    vmax = vmax if vmax > 0 else 1e-9
+    im = ax.imshow(resid_map, cmap="RdBu_r", vmin=-vmax, vmax=vmax, aspect="auto")
+    cbar = plt.colorbar(im, ax=ax, fraction=0.046)
+    cbar.set_label("residual  t − s·l")
+    ax.set_title(f"NIE = {nie:.3f}   (scale s = {s_opt:.3g})\n‖t − s·l‖ / ‖t‖   (off-diag residual)")
+
     # unsigned F1
     ax = axes[1, 0]
     ax.imshow(clf_map, cmap=clf_cmap, vmin=0, vmax=3, aspect="auto")
@@ -403,7 +345,9 @@ def plot_metric_verification(true_conn, learned_conn, save_dir, method_name="con
     ax = axes[1, 1]
     ax.imshow(sign_map, cmap=clf_cmap, vmin=0, vmax=3, aspect="auto")
     ax.legend(handles=clf_patches, loc="upper right", fontsize=7)
-    ax.set_title(f"Signed F1 = {f1s:.3f}\nTP={tps} FP={fps} FN={fns}  P={precs:.2f} R={recs:.2f}")
+    n_flipped = int(np.sum((lb_m == 1) & (tb_m == 1) & (pred_lbl != true_lbl)))
+    ax.set_title(f"Signed F1 = {f1s:.3f}\nTP={tps} FP={fps} FN={fns} (flipped={n_flipped})  "
+                 f"P={precs:.2f} R={recs:.2f}")
 
     # AUROC
     ax = axes[1, 2]
@@ -415,19 +359,7 @@ def plot_metric_verification(true_conn, learned_conn, save_dir, method_name="con
     ax.set_xlabel("FPR"); ax.set_ylabel("TPR")
     ax.set_title(f"AUROC = {auroc:.3f}\n(rank edges by |learned|)")
 
-    # unsigned / signed MCC
-    _draw_confusion(axes[2, 0], tp, fp, fn, tn, mcc_u, "Unsigned MCC")
-    _draw_confusion(axes[2, 1], tps, fps, fns, tns, mcc_s, "Signed MCC")
-
-    # NIE
-    ax = axes[2, 2]
-    resid_map = np.where(np.eye(n, dtype=bool), np.nan, residual_full)
-    vmax = np.nanmax(np.abs(resid_map))
-    vmax = vmax if vmax > 0 else 1e-9
-    im = ax.imshow(resid_map, cmap="RdBu_r", vmin=-vmax, vmax=vmax, aspect="auto")
-    cbar = plt.colorbar(im, ax=ax, fraction=0.046)
-    cbar.set_label("residual  t − s·l")
-    ax.set_title(f"NIE = {nie:.3f}   (scale s = {s_opt:.3g})\n‖t − s·l‖ / ‖t‖   (off-diag residual)")
+    axes[1, 3].axis("off")
 
     plt.tight_layout(rect=[0, 0, 1, 0.97])
     save_path = os.path.join(save_dir, "metric_verification.pdf")
@@ -460,8 +392,8 @@ def _align_matrices_legacy(adjacency_matrices, excitatory=True):
     for i in range(1, len(adjacency_matrices)):
         current_matrix = adjacency_matrices[i]
 
-        cos_sim_reg = calculate_fit(reference_matrix, current_matrix, plot=False).cosine
-        cos_sim_rev = calculate_fit(reference_matrix, -current_matrix, plot=False).cosine
+        cos_sim_reg = calculate_fit(reference_matrix, current_matrix).cosine
+        cos_sim_rev = calculate_fit(reference_matrix, -current_matrix).cosine
         if cos_sim_rev > cos_sim_reg:
             adjacency_matrices[i] = -current_matrix
     return adjacency_matrices
