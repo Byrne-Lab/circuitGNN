@@ -9,13 +9,18 @@ from circuit_gnn.data import *
 import pandas as pd
 
 # SET PARAMETERS
-data = 'allen'
+# doubles as the results dir name, so it has to match the `data` arg of the run
+# script that produced it:
+#   'allen'            hippocampal prep_771160300      (run_allen.py)
+#   'allen_750749662'  visual hierarchy                (run_allen.py)
+#   'th2_<session>_<epoch>'  one th-2 PoSub session    (run_th2.py)
+data = 'th2_A3716-201015b_wake1'
 
-num_runs = 5              # set to None to use every run listed in ablation.csv
-ablation_threshold = 0.10 # removes non-optimal runs based on ablation test
+num_runs = None
+ablation_threshold = 0.01 # removes non-optimal runs based on ablation test
 sign_bin_ms = 20
-_native_ms = {'allen': 1.0}
-sign_bin = round(sign_bin_ms / _native_ms.get(data, 1.0))
+_native_ms = {'allen': 1.0, 'allen_750749662': 1.0}
+sign_bin = round(sign_bin_ms / _native_ms.get(data, 1.0))   # th-2 is 1.0 ms too
 
 # CREATE FOLDERS
 print(f"\n{data} Aggregation (no ground truth)")
@@ -28,16 +33,31 @@ print(f"Num runs: {num_runs}")
 print(f"Ablation threshold: {ablation_threshold}")
 
 # LOAD DATA
-data_map = {'allen': load_allen_network}
+data_map = {'allen': load_allen_network,
+            'allen_750749662': load_allen_network}
 
-loader_kwargs = {'allen': {'data_dir': 'datasets/allen/prep_793224716', 'max_time_s': 600}}
+loader_kwargs = {
+    'allen': {'data_dir': 'datasets/allen/prep_771160300',
+              'start_time_s': 600, 'max_time_s': 600},
+    'allen_750749662': {'data_dir': 'datasets/allen/prep_750749662_natural_movie_three',
+                        'start_time_s': 0, 'max_time_s': 600},
+}
+
+# th-2 dirs are named th2_<session>_<epoch>, so the loader args come from the
+# name rather than an entry per session. max_time_s must match run_th2.py.
+if data.startswith('th2_'):
+    _session, _epoch = data[len('th2_'):].rsplit('_', 1)
+    data_map[data] = load_th2_network
+    loader_kwargs[data] = {'data_dir': f'datasets/th2/prep_{_session}_{_epoch}',
+                           'start_time_s': 0, 'max_time_s': 600}
 
 binned_spikes, _, neuron_names = data_map[data](downsample_factor=sign_bin,
                                                 **loader_kwargs.get(data, {}))
 
-# group label per neuron; allen names are '<region>_<probe>_u<unit_id>'
+# group label per neuron; allen names are '<region>_<probe>_u<unit_id>',
+# th-2 names are '<cellclass>_pos_u<unit>' -- either way the group is token 0
 group_labels = [str(n).split('_')[0] for n in neuron_names]
-groups = list(dict.fromkeys(group_labels))  # first-appearance order (loaders group by region)
+groups = list(dict.fromkeys(group_labels))  # first-appearance order (loaders group by class/region)
 print(f"Groups: {groups}")
 
 def do_plot(matrix, method_name):

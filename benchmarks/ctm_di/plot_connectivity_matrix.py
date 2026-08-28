@@ -6,14 +6,18 @@ import h5py
 import numpy as np
 import os
 import seaborn as sns
-from circuit_gnn.utils import plot_connectivity_matrix, plot_pdcm_matrix
+from circuit_gnn.utils import plot_connectivity_matrix, plot_pdcm_matrix, plot_region_matrix
 
 RED_BLUE = sns.diverging_palette(240, 10, as_cmap=True)
 
 os.chdir('C:/Users/agupta17/Documents/GitHub/circuitGNN/datasets')
-data_name = 'pdcm'
 
-data = f"{data_name}/baseline/ctm_di_raw_connectivity.mat"
+DATASETS = ['pdcm', 'OC_1', 'OC_2', 'control', 'arbitrary', 'allen']
+
+# allen units are '<region>_<probe>_u<id>' and already grouped by region
+ALLEN_REGIONS = ['DG', 'CA3', 'CA1', 'SUB']
+ALLEN_PREP_DIR = 'allen/prep_793224716'
+
 
 def threshold_di(C, min_consecutive=4, threshold=0.01):
     n_bins, n, _ = C.shape
@@ -35,27 +39,45 @@ def threshold_di(C, min_consecutive=4, threshold=0.01):
                 C_final[i, j] = np.mean(curve[curve != 0])
     return C_final
 
-with h5py.File(data, "r") as f:
-    C = np.array(f["conn_3d"])
-    C = C.transpose(0, 2, 1)
-    print(f"Raw connectivity shape: {C.shape}")
 
-C_thresh = threshold_di(C)
-print(f"Thresholded connectivity shape: {C_thresh.shape}")
-print(f"Non-zero connections: {np.count_nonzero(C_thresh)}")
+def convert(data_name):
+    data = f"{data_name}/baseline/ctm_di_raw_connectivity.mat"
+    if not os.path.exists(data):
+        print(f"[{data_name}] skipped (no {data})")
+        return
 
-save_dir = f"{data_name}/baseline"
-np.save(f"{save_dir}/CTM_DI.npy", C_thresh)
+    with h5py.File(data, "r") as f:
+        C = np.array(f["conn_3d"])
+        C = C.transpose(0, 2, 1)
+        print(f"[{data_name}] Raw connectivity shape: {C.shape}")
 
-if data_name in ('pdcm', 'pdcm_large'):
-    pop_labels = np.load(f'{data_name}/pop_labels.npy')
-    plot_pdcm_matrix(C_thresh, pop_labels, method_name='CTM-DI', save_dir=save_dir)
-elif data_name in ('OC_1', 'OC_2', 'control', 'small_circuit_A', 'small_circuit_B'):
-    with open(f'{data_name}/spikes.head') as f:
-        neuron_names = [line.split('[')[1].split('.')[0] for line in f if line.startswith('V[')]
-    plot_connectivity_matrix(C_thresh, neuron_names, method_name='CTM-DI',
-                             cmap=RED_BLUE, save_dir=save_dir, plot_val=False)
-else:
-    neuron_names = [f'Neuron {i+1}' for i in range(C_thresh.shape[0])]
-    plot_connectivity_matrix(C_thresh, neuron_names, method_name='CTM-DI',
-                             cmap=RED_BLUE, save_dir=save_dir, plot_val=False)
+    C_thresh = threshold_di(C)
+    print(f"[{data_name}] Thresholded connectivity shape: {C_thresh.shape}")
+    print(f"[{data_name}] Non-zero connections: {np.count_nonzero(C_thresh)}")
+
+    save_dir = f"{data_name}/baseline"
+    np.save(f"{save_dir}/CTM_DI.npy", C_thresh)
+
+    if data_name in ('pdcm', 'pdcm_large'):
+        pop_labels = np.load(f'{data_name}/pop_labels.npy')
+        plot_pdcm_matrix(C_thresh, pop_labels, method_name='CTM-DI', save_dir=save_dir)
+    elif data_name == 'allen':
+        # run_allen.m stores integer labels; region identity comes from the prep dir
+        pop_labels = np.load(f'{ALLEN_PREP_DIR}/pop_labels.npy')
+        regions = [str(n).split('_')[0] for n in pop_labels]
+        plot_region_matrix(C_thresh, regions, ALLEN_REGIONS, method_name='CTM-DI',
+                           save_dir=save_dir)
+    elif data_name in ('OC_1', 'OC_2', 'control', 'small_circuit_A', 'small_circuit_B'):
+        with open(f'{data_name}/spikes.head') as f:
+            neuron_names = [line.split('[')[1].split('.')[0] for line in f if line.startswith('V[')]
+        plot_connectivity_matrix(C_thresh, neuron_names, method_name='CTM-DI',
+                                 cmap=RED_BLUE, save_dir=save_dir, plot_val=False)
+    else:
+        neuron_names = [f'Neuron {i+1}' for i in range(C_thresh.shape[0])]
+        plot_connectivity_matrix(C_thresh, neuron_names, method_name='CTM-DI',
+                                 cmap=RED_BLUE, save_dir=save_dir, plot_val=False)
+
+
+if __name__ == "__main__":
+    for data_name in DATASETS:
+        convert(data_name)

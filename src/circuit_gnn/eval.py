@@ -8,9 +8,9 @@ from circuit_gnn.utils import *
 from circuit_gnn.data import *
 import pandas as pd
 
-data = 'OC_1'
+data = 'arbitrary'
 
-num_runs = 5
+num_runs = 50
 ablation_threshold = 0.10 # removes non-optimal runs based on ablation test
 sign_bin_ms = 20
 _native_ms = {'OC_1': 0.5, 'OC_2': 0.5, 'control': 0.5,
@@ -30,6 +30,8 @@ print(f"Ablation threshold: {ablation_threshold}")
 # LOAD DATA
 data_map = {'OC_1': load_OC_1_network, 'OC_2': load_OC_2_network, 'control': load_control_network,
             'arbitrary': load_arbitrary_network, 'pdcm': load_pdcm_network,
+            'arbitrary_modification1': load_arbitrary_modification1_network,
+            'arbitrary_modification2': load_arbitrary_modification2_network,
             'small_circuit_A': load_small_circuit_A_network, 'small_circuit_B': load_small_circuit_B_network}
 
 binned_spikes, true_conn, neuron_names = data_map[data](downsample_factor=sign_bin)

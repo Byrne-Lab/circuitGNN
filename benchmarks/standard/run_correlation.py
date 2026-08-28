@@ -21,13 +21,8 @@ data_map = {'OC_1': load_OC_1_network, 'OC_2': load_OC_2_network,
 
 native_res_ms = {'OC_1': 0.5, 'OC_2': 0.5, 'control': 0.5, 'arbitrary': 1.0, 'pdcm': 1.0} # in ms
 bin_sizes_ms = [1, 2, 5, 10, 50]
-GDI_BIN_MS = 20
 
 for data in ['OC_1', 'OC_2', 'control', 'pdcm']:
-
-    sign_downsample_factor = int(GDI_BIN_MS / native_res_ms[data])
-    sign_spikes, _, _ = data_map[data](downsample_factor=sign_downsample_factor)
-    gdi_sign = robust_sign_inference(sign_spikes)
 
     for bin_size_ms in bin_sizes_ms:
 
@@ -47,15 +42,9 @@ for data in ['OC_1', 'OC_2', 'control', 'pdcm']:
 
         # Correlation
         start_time = time.time()
-        ci_correlation, pk_correlation = calculate_correlation(binned_spikes, max_lag=max_lag)
+        _, pk_correlation = calculate_correlation(binned_spikes, max_lag=max_lag)
         end_time = time.time()
         print(f"Correlation calculation time: {(end_time - start_time)/60:.2f} minutes")
 
         np.save(f"{save_dir}/correlation_pk{suffix}.npy", pk_correlation)
-        np.save(f"{save_dir}/correlation_ci{suffix}.npy", ci_correlation)
         plot_connectivity_matrix(pk_correlation, neuron_names, f"Correlation PK {suffix}", save_dir=save_dir, plot_val=False)
-        plot_connectivity_matrix(ci_correlation, neuron_names, f"Correlation CI {suffix}", save_dir=save_dir, plot_val=False, signed=False)
-
-        ci_correlation_signed = apply_gdi_sign(ci_correlation, gdi_sign)
-        np.save(f"{save_dir}/correlation_ci{suffix}_signed.npy", ci_correlation_signed)
-        plot_connectivity_matrix(ci_correlation_signed, neuron_names, f"Correlation CI {suffix} GDI-signed", save_dir=save_dir, plot_val=False)

@@ -175,20 +175,20 @@ if __name__ == '__main__':
     plot_matrix(true_conn, pop_labels, vmin=-1, vmax=0.5, title='True Connectivity', cbar_label='Connection strength', fname='ground_truth.pdf')
 
     consistent_mean = np.load('results/pdcm/mean_consistent.npy')
-    plot_matrix(consistent_mean, pop_labels, vmin=-0.010, vmax=0.005, title='GNN Connectivity Matrix', cbar_label='Connection strength', fname='gnn.pdf')
+    plot_matrix(consistent_mean, pop_labels, vmin=-0.005, vmax=0.010, title='GNN Connectivity Matrix', cbar_label='Connection strength', fname='gnn.pdf')
 
     # benchmarks
     glmpp = np.load('datasets/pdcm/baseline/spycon_glmpp_default.npy')
     plot_matrix(glmpp, pop_labels, vmin=-2, vmax=6, title='GLMPP Connectivity Matrix', cbar_label='Connection strength', fname='glmpp.pdf')
+
+    glmcc = np.load('datasets/pdcm/baseline/spycon_glmcc_syn_delay1ms_beta4000_tau4ms-4ms.npy')
+    plot_matrix(glmcc, pop_labels, vmin=-0.1, vmax=0.4, title='GLMCC Connectivity Matrix', cbar_label='Connection strength', fname='glmcc.pdf')
 
     dsttc = np.load('datasets/pdcm/baseline/spycon_dsttc_delta_t30ms.npy')
     plot_matrix(dsttc, pop_labels, vmin=-0.1, vmax=0.4, title='DSTTC Connectivity Matrix', cbar_label='Connection strength', fname='dsttc.pdf')
 
     sccg = np.load('datasets/pdcm/baseline/spycon_sccg_binsize2ms_hf0.8.npy')
     plot_matrix(sccg, pop_labels, vmin=-0.1, vmax=0.3, title='SCCG Connectivity Matrix', cbar_label='Connection strength', fname='sccg.pdf')
-
-    decision_tree = np.load('datasets/pdcm/baseline/decision_tree_mcc_threshold_signed.npy')  
-    plot_matrix(decision_tree, pop_labels, vmin=-0.1, vmax=0.4, title='Decision Tree Connectivity Matrix', cbar_label='Connection strength', fname='decision_tree.pdf')
 
     ctm_di = np.load('datasets/pdcm/baseline/ctm_di.npy')
     plot_matrix(ctm_di, pop_labels, vmin=-0.025, vmax=0.1, title='CTM-DI Connectivity Matrix', cbar_label='Connection strength', fname='ctm_di.pdf')  

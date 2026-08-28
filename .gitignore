@@ -26,3 +26,9 @@ figures/pdcm
 figures/scaling
 figures/hiding
 figures/operant*
+figures/allen*
+figures/oc
+test.md
+variant*
+figures/arb_exp
+scripts/run_allen_sweep.py

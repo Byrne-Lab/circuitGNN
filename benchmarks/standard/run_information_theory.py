@@ -19,7 +19,7 @@ native_res_ms = {'OC_1': 0.5, 'OC_2': 0.5, 'control': 0.5, 'arbitrary': 1.0, 'pd
 bin_sizes_ms = [50, 10, 5, 2, 1]
 GDI_BIN_MS = 20
 
-for data in ['OC_1', 'OC_2', 'control']: # next pdcm
+for data in ['OC_1', 'OC_2', 'control', 'pdcm']:
 
     sign_downsample_factor = int(GDI_BIN_MS / native_res_ms[data])
     sign_spikes, _, _ = data_map[data](downsample_factor=sign_downsample_factor)

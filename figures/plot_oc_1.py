@@ -16,7 +16,7 @@ PANELS = [
 
     # benchmarks
     ('datasets/OC_1/baseline/spycon_glmpp_default.npy',              'GLMPP Connectivity Matrix',         'glmpp.pdf',         -3, 12),
-    ('datasets/OC_1/baseline/spycon_dsttc_delta_t30ms.npy',              'DSTTC Connectivity Matrix',         'dsttc.pdf',         -0.5, 0.5),
+    ('datasets/OC_1/baseline/spycon_dsttc_delta_t30ms.npy',              'DSTTC Connectivity Matrix',         'dsttc.pdf',         -0.1, 0.5),
     ('datasets/OC_1/baseline/CTM_DI.npy',                            'CTM-DI Connectivity Matrix',        'ctm_di.pdf',        -0.1, 0.6),
 ]
 

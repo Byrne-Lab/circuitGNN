@@ -22,6 +22,7 @@ DATASET_REGISTRY = {
     "OC_2":            {"loader": load_OC_2_network,            "loader_kwargs": {"downsample_factor": 20}},
     "control":         {"loader": load_control_network,         "loader_kwargs": {"downsample_factor": 20}},
     "pdcm":            {"loader": load_pdcm_network,            "loader_kwargs": {"downsample_factor": 2}},
+    "arbitrary":       {"loader": load_arbitrary_network,       "loader_kwargs": {"downsample_factor": 2}},
 }
 
 
