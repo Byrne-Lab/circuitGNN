@@ -15,14 +15,13 @@ import time
 from circuit_gnn.data import *
 from circuit_gnn.utils import *
 
-data_map = {'OC_1': load_OC_1_network, 'OC_2': load_OC_2_network,
-            'control': load_control_network,
+data_map = {'OC_1': load_OC_1_network,
             'arbitrary': load_arbitrary_network, 'pdcm': load_pdcm_network}
 
-native_res_ms = {'OC_1': 0.5, 'OC_2': 0.5, 'control': 0.5, 'arbitrary': 1.0, 'pdcm': 1.0} # in ms
+native_res_ms = {'OC_1': 0.5, 'arbitrary': 1.0, 'pdcm': 1.0} # in ms
 bin_sizes_ms = [1, 2, 5, 10, 50]
 
-for data in ['OC_1', 'OC_2', 'control', 'pdcm']:
+for data in ['OC_1', 'pdcm']:
 
     for bin_size_ms in bin_sizes_ms:
 

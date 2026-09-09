@@ -15,28 +15,18 @@ from circuit_gnn.data import *
 from circuit_gnn.utils import *
 from spycon.coninf import CoincidenceIndex, Smoothed_CCG, directed_STTC, GLMCC, GLMPP
 
-DATASETS = ['allen']
+DATASETS = ['OC_1', 'pdcm']
 
 data_map = {
     'OC_1':      load_OC_1_network,
-    'OC_2':      load_OC_2_network,
-    'control':   load_control_network,
     'arbitrary': load_arbitrary_network,
     'pdcm':      load_pdcm_network,
-    'allen':     load_allen_network,
 }
 
 # native recording resolution, ms
-native_res_ms = {'OC_1': 0.5, 'OC_2': 0.5, 'control': 0.5,
-                 'arbitrary': 1.0, 'pdcm': 1.0, 'allen': 1.0}
-
-loader_kwargs = {
-    'allen': {'data_dir': 'datasets/allen/prep_793224716', 'max_time_s': 600},
-}
+native_res_ms = {'OC_1': 0.5, 'arbitrary': 1.0, 'pdcm': 1.0}
 
 BIN_MS = 1.0
-
-ALLEN_REGIONS = ['DG', 'CA3', 'CA1', 'SUB']
 
 
 def binned_to_spikes(binned_spikes, bin_size_sec):
@@ -76,15 +66,6 @@ def result_to_matrices(result, num_channels):
 
 def threshold_weights(weight_mat, score_mat, threshold):
     return np.where(score_mat > threshold, weight_mat, 0.0)
-
-
-def plot_matrix(data, matrix, neuron_names, title, save_dir):
-    if data == 'allen':
-        plot_region_matrix(matrix, [n.split('_')[0] for n in neuron_names],
-                           ALLEN_REGIONS, method_name=title, save_dir=save_dir)
-    else:
-        plot_connectivity_matrix(matrix, neuron_names, title,
-                                 save_dir=save_dir, plot_val=False)
 
 
 # Axes measured in seconds
@@ -130,7 +111,7 @@ for data in DATASETS:
     os.makedirs(save_dir, exist_ok=True)
 
     binned_spikes, true_conn, neuron_names = data_map[data](
-        downsample_factor=downsample_factor, **loader_kwargs.get(data, {}))
+        downsample_factor=downsample_factor)
     num_channels, num_time = binned_spikes.shape
     print(f'\n=== {data}: {num_channels} channels, {num_time} time points ===')
 
@@ -138,15 +119,15 @@ for data in DATASETS:
     print(f'  Total spikes: {len(times)},  bin size: {bin_size_sec*1e3:.1f} ms')
 
     methods = {
-        # 
+         
         # 'ci_default':    CoincidenceIndex(),
-        # 'sccg_default':  Smoothed_CCG(),
-        # 'dsttc_default': directed_STTC(),
-        # 'glmcc_default': GLMCC(),
-        # 'glmpp_default': GLMPP(),
+        'sccg_default':  Smoothed_CCG(),
+        'dsttc_default': directed_STTC(),
+        'glmcc_default': GLMCC(),
+        'glmpp_default': GLMPP(),
     }
     
-    """
+
     methods.update(factorial(Smoothed_CCG, 'sccg',
         binsize=[1e-3, 2e-3, 5e-3],
         hf=[0.4, 0.6, 0.8]))
@@ -162,7 +143,7 @@ for data in DATASETS:
     methods.update(factorial(directed_STTC, 'dsttc',
         jitter=[True],
         jitter_factor=[3.0, 7.0, 15.0]))
-    """
+
     methods.update(factorial(GLMCC, 'glmcc',
         syn_delay=[1e-3, 3e-3, 5e-3, 10e-3],
         beta=[500, 4000],
@@ -189,4 +170,5 @@ for data in DATASETS:
         print(f"    threshold ({result.method}) = {threshold:.4g}, {n_edges} edges")
 
         np.save(out_npy, weight_thr)
-        plot_matrix(data, weight_thr, neuron_names, f"Spycon {name.upper()}", save_dir)
+        plot_connectivity_matrix(weight_thr, neuron_names, f"Spycon {name.upper()}",
+                                 save_dir=save_dir, plot_val=False)

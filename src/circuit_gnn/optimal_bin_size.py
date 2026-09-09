@@ -9,7 +9,7 @@ import numpy as np
 
 CANDIDATE_BINS_MS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20]  # bins the selector scores
 FALLBACK_BIN_MS = 4.0   # used when the kappa curve has no interior peak
-N_PROXY = 150           # cap neurons (random subset)
+N_PROXY = 150           # max neurons selected randomly
 RIDGE = 1.0             # ridge on every lag-1 VAR solve
 SIGN_Z = 1.0            # threshold (std units) for calling an edge +/-/0
 SEG_K = 4               # disjoint contiguous segments compared pairwise

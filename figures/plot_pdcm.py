@@ -175,7 +175,7 @@ if __name__ == '__main__':
     plot_matrix(true_conn, pop_labels, vmin=-1, vmax=0.5, title='True Connectivity', cbar_label='Connection strength', fname='ground_truth.pdf')
 
     consistent_mean = np.load('results/pdcm/mean_consistent.npy')
-    plot_matrix(consistent_mean, pop_labels, vmin=-0.005, vmax=0.010, title='GNN Connectivity Matrix', cbar_label='Connection strength', fname='gnn.pdf')
+    plot_matrix(consistent_mean, pop_labels, vmin=-0.010, vmax=0.005, title='GNN Connectivity Matrix', cbar_label='Connection strength', fname='gnn.pdf')
 
     # benchmarks
     glmpp = np.load('datasets/pdcm/baseline/spycon_glmpp_default.npy')

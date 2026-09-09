@@ -6,17 +6,13 @@ import h5py
 import numpy as np
 import os
 import seaborn as sns
-from circuit_gnn.utils import plot_connectivity_matrix, plot_pdcm_matrix, plot_region_matrix
+from circuit_gnn.utils import plot_connectivity_matrix, plot_pdcm_matrix
 
 RED_BLUE = sns.diverging_palette(240, 10, as_cmap=True)
 
 os.chdir('C:/Users/agupta17/Documents/GitHub/circuitGNN/datasets')
 
-DATASETS = ['pdcm', 'OC_1', 'OC_2', 'control', 'arbitrary', 'allen']
-
-# allen units are '<region>_<probe>_u<id>' and already grouped by region
-ALLEN_REGIONS = ['DG', 'CA3', 'CA1', 'SUB']
-ALLEN_PREP_DIR = 'allen/prep_793224716'
+DATASETS = ['pdcm', 'OC_1', 'arbitrary']
 
 
 def threshold_di(C, min_consecutive=4, threshold=0.01):
@@ -61,13 +57,7 @@ def convert(data_name):
     if data_name in ('pdcm', 'pdcm_large'):
         pop_labels = np.load(f'{data_name}/pop_labels.npy')
         plot_pdcm_matrix(C_thresh, pop_labels, method_name='CTM-DI', save_dir=save_dir)
-    elif data_name == 'allen':
-        # run_allen.m stores integer labels; region identity comes from the prep dir
-        pop_labels = np.load(f'{ALLEN_PREP_DIR}/pop_labels.npy')
-        regions = [str(n).split('_')[0] for n in pop_labels]
-        plot_region_matrix(C_thresh, regions, ALLEN_REGIONS, method_name='CTM-DI',
-                           save_dir=save_dir)
-    elif data_name in ('OC_1', 'OC_2', 'control', 'small_circuit_A', 'small_circuit_B'):
+    elif data_name in ('OC_1', 'small_circuit_A', 'small_circuit_B'):
         with open(f'{data_name}/spikes.head') as f:
             neuron_names = [line.split('[')[1].split('.')[0] for line in f if line.startswith('V[')]
         plot_connectivity_matrix(C_thresh, neuron_names, method_name='CTM-DI',

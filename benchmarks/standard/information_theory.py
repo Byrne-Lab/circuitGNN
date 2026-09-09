@@ -34,12 +34,6 @@ def _get_top_neighbors(pairwise_te, j, exclude, k=5):
     return top_k[te_into_j[top_k] > 0]
 
 
-def _H(prob):
-    p = prob[prob>0]
-    return -np.sum(p * np.log2(p))
-
-
-# mutual information
 def calculate_mutual_information(binned_spikes, max_lag=30):
     print('Calculating mutual information...')
     num_channels, ntime = binned_spikes.shape

@@ -91,17 +91,6 @@ def _run_analysis(X, y, feature_names, n_runs=30, undersample_ratio=4, fn_cost=3
     }
 
 
-def _analyze_target(binned_spikes, target_idx, window_bins=50, subinterval_bins=10,
-                   n_runs=30, undersample_ratio=4, fn_cost=3.5, fp_cost=1.0):
-
-    X, y, feature_names, source_indices = _prepare_intervals(binned_spikes, target_idx, window_bins=window_bins, subinterval_bins=subinterval_bins)
-
-    result = _run_analysis(X, y, feature_names, n_runs=n_runs, undersample_ratio=undersample_ratio, fn_cost=fn_cost, fp_cost=fp_cost)
-    result.update({'X': X, 'y': y, 'feature_names': feature_names, 'source_indices': source_indices})
-    
-    return result
-
-
 def calculate_mcc_matrix(binned_spikes, window_bins=50, subinterval_bins=10, n_runs=30):
     print('Calculating decision tree MCC matrix...')
     num_channels = binned_spikes.shape[0]

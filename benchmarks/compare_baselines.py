@@ -14,13 +14,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 os.chdir(str(REPO_ROOT))  # loaders use dataset paths relative to the repo root
 
-from circuit_gnn.data import (load_OC_1_network, load_OC_2_network, load_control_network, load_pdcm_network, load_arbitrary_network, load_small_circuit_A_network, load_small_circuit_B_network)
+from circuit_gnn.data import (load_OC_1_network, load_pdcm_network, load_arbitrary_network, load_small_circuit_A_network, load_small_circuit_B_network)
 from circuit_gnn.utils import calculate_fit, align_matrices, get_consistent_connections
 
 DATASET_REGISTRY = {
     "OC_1":            {"loader": load_OC_1_network,            "loader_kwargs": {"downsample_factor": 20}},
-    "OC_2":            {"loader": load_OC_2_network,            "loader_kwargs": {"downsample_factor": 20}},
-    "control":         {"loader": load_control_network,         "loader_kwargs": {"downsample_factor": 20}},
     "pdcm":            {"loader": load_pdcm_network,            "loader_kwargs": {"downsample_factor": 2}},
     "arbitrary":       {"loader": load_arbitrary_network,       "loader_kwargs": {"downsample_factor": 2}},
 }
@@ -30,7 +28,7 @@ RESULTS_ROOT = REPO_ROOT / "results"
 ABLATION_THRESHOLD = 0.10      
 CONSISTENCY_THRESHOLD = 0.8
 SIGN_BIN_MS = 20                
-NATIVE_MS = {"OC_1": 0.5, "OC_2": 0.5, "control": 0.5, "pdcm": 1.0,
+NATIVE_MS = {"OC_1": 0.5, "pdcm": 1.0,
              "arbitrary": 1.0, "small_circuit_A": 0.5, "small_circuit_B": 0.5}
 NUM_RUNS = 50
 

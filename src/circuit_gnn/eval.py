@@ -13,7 +13,7 @@ data = 'arbitrary'
 num_runs = 50
 ablation_threshold = 0.10 # removes non-optimal runs based on ablation test
 sign_bin_ms = 20
-_native_ms = {'OC_1': 0.5, 'OC_2': 0.5, 'control': 0.5,
+_native_ms = {'OC_1': 0.5,
               'small_circuit_A': 0.5, 'small_circuit_B': 0.5}
 sign_bin = round(sign_bin_ms / _native_ms.get(data, 1.0))
 
@@ -28,7 +28,7 @@ print(f"Num runs: {num_runs}")
 print(f"Ablation threshold: {ablation_threshold}")
 
 # LOAD DATA
-data_map = {'OC_1': load_OC_1_network, 'OC_2': load_OC_2_network, 'control': load_control_network,
+data_map = {'OC_1': load_OC_1_network,
             'arbitrary': load_arbitrary_network, 'pdcm': load_pdcm_network,
             'arbitrary_modification1': load_arbitrary_modification1_network,
             'arbitrary_modification2': load_arbitrary_modification2_network,

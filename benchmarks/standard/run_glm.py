@@ -13,16 +13,14 @@ from circuit_gnn.utils import *
 
 data_map = {
     'OC_1': load_OC_1_network,
-    'OC_2': load_OC_2_network,
-    'control': load_control_network,
     'arbitrary': load_arbitrary_network,
     'pdcm': load_pdcm_network,
 }
 
 
-for data in ['OC_1', 'OC_2', 'control', 'pdcm']:
+for data in ['OC_1', 'pdcm']:
 
-    if data in ('OC_1', 'OC_2', 'control'):
+    if data == 'OC_1':
         downsample_factor = 2  # 1 ms
     elif data == 'arbitrary':
         downsample_factor = 1  # 1 ms

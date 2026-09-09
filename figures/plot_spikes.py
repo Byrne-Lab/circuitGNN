@@ -9,8 +9,7 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
 from circuit_gnn.data import (
-    load_arbitrary_network, load_OC_1_network, load_OC_2_network, load_control_network,
-    load_pdcm_network, load_allen_network,
+    load_arbitrary_network, load_OC_1_network, load_pdcm_network,
     load_small_circuit_A_network, load_small_circuit_B_network,
 )
 
@@ -21,10 +20,7 @@ DATASETS = {
     'small_circuit_B': (load_small_circuit_B_network, 0.5),
     'arbitrary':       (load_arbitrary_network, 1.0),
     'OC_1':            (load_OC_1_network, 0.5),
-    'OC_2':            (load_OC_2_network, 0.5),
-    'control':         (load_control_network, 0.5),
     'pdcm':            (load_pdcm_network, 1.0),
-    'allen':           (load_allen_network, 1.0),
 }
 
 
@@ -67,4 +63,3 @@ if __name__ == '__main__':
     plot_dataset_raster('small_circuit_B', t_start=0, t_end=240)
     plot_dataset_raster('arbitrary',       t_start=0, t_end=240)
     plot_dataset_raster('OC_1',            t_start=0, t_end=240)
-    plot_dataset_raster('OC_2',            t_start=0, t_end=240)
