@@ -1,13 +1,14 @@
-"""Figures for the arbitrary SNNAP circuit and its two single-edge modifications,
+"""Figures for the arbitrary SNNAP circuit and its three single-edge modifications,
 saved under figures/arb_exp/.
 
-Three conditions, eleven neurons each:
+Four conditions, eleven neurons each:
 
   arbitrary                baseline
-  arbitrary_modification1  N3 -> N10 depressed, 1.25 -> 0.50
-  arbitrary_modification2  N7 ->  N2 created,   0.00 -> 1.25
+  arbitrary_modification1  N3 -> N10 depressed,   1.25 -> 0.50
+  arbitrary_modification2  N7 ->  N2 created,     0.00 -> 1.25
+  arbitrary_modification3  N6 ->  N2 potentiated, 1.25 -> 3.125
 
-Three figures, each holding all three conditions side by side: the ground-truth
+Three figures, each holding all four conditions side by side: the ground-truth
 matrices, the GNN consistent means, and the spike rasters over [T_START, T_END].
 Each matrix figure has one shared colour bar; the two families sit ~7x apart in
 scale, so they get their own hardcoded limits.
@@ -46,14 +47,15 @@ CONDITIONS = [
     ('arbitrary',               'Baseline',                             BASELINE_EDGES),
     ('arbitrary_modification1', 'Mod 1: N3→N10 depressed (1.25→0.50)',  {**BASELINE_EDGES, (2, 9): 0.50}),
     ('arbitrary_modification2', 'Mod 2: N7→N2 created (0.00→1.25)',     {**BASELINE_EDGES, (6, 1): 1.25}),
+    ('arbitrary_modification3', 'Mod 3: N6→N2 potentiated (1.25→3.125)', {**BASELINE_EDGES, (5, 1): 3.125}),
 ]
 
 T_START, T_END = 20.0, 60.0
 SPIKE_THRESHOLD_MV = -10.0  # same threshold + re-arm as the loaders
 REARM_SAMPLES = 8
 
-GT_VMIN, GT_VMAX = -1.0, 0.4
-GNN_VMIN, GNN_VMAX = -0.015, 0.015
+GT_VMIN, GT_VMAX = -1.0, 0.8   # mod 3's potentiated edge reaches 3.125/4.00
+GNN_VMIN, GNN_VMAX = -0.015, 0.025
 CBAR_LABEL = 'Connection strength'
 
 
@@ -102,7 +104,7 @@ def plot_matrix_row(matrices, vmin, vmax, suptitle, fname):
     cmap.set_bad(color='white')
     norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
 
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    fig, axes = plt.subplots(1, len(CONDITIONS), figsize=(6 * len(CONDITIONS), 6))
     for ax, matrix, (_, title, _) in zip(axes, matrices, CONDITIONS):
         matrix = np.asarray(matrix, dtype=float).copy()
         np.fill_diagonal(matrix, 0.0)
@@ -123,7 +125,7 @@ def plot_matrix_row(matrices, vmin, vmax, suptitle, fname):
 
 def plot_rasters(spike_times_by_cond, fname):
     """The three rasters stacked on one shared time axis."""
-    fig, axes = plt.subplots(3, 1, figsize=(12, 12), sharex=True)
+    fig, axes = plt.subplots(len(CONDITIONS), 1, figsize=(12, 4 * len(CONDITIONS)), sharex=True)
     for ax, spike_times, (_, title, _) in zip(axes, spike_times_by_cond, CONDITIONS):
         ax.eventplot([t[t >= T_START] for t in spike_times],
                      lineoffsets=range(NUM_NEURONS), linelengths=0.8,

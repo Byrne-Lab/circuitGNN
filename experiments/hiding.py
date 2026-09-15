@@ -25,7 +25,7 @@ from circuit_gnn.utils import (align_matrices, get_consistent_connections, calcu
 HIDE_FRACS = [0.0, 0.2, 0.4]
 HIDE_SEED = 0
 
-ABLATION_THRESHOLD = 0.10
+ABLATION_THRESHOLD = 0.20
 CONSISTENCY_THRESHOLD = 0.8
 GDI_BIN_MS = 20
 DATA_DIR = "datasets/pdcm"

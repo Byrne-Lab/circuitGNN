@@ -30,7 +30,7 @@ LOADERS = {
     "small_circuit_B": load_small_circuit_B_network,
 }
 
-ABLATION_THRESHOLD = 0.10
+ABLATION_THRESHOLD = 0.20
 CONSISTENCY_THRESHOLD = 0.8
 MAX_RUNS = 50
 GDI_BIN_MS = 20

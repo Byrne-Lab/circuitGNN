@@ -1,8 +1,6 @@
 .vscode/
 __pycache__/
-archive/
 datasets/
-claude_notes.txt
 *.pyd
 *.so
 benchmarks/CoNNECT/modules/build/
@@ -14,6 +12,7 @@ figures/*.csv
 figures/pdcm
 figures/scaling
 figures/hiding
-test.md
-variant*
 figures/arb_exp
+figures/baselines
+figures/consistency
+manuscript*

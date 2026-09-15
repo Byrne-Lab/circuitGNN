@@ -18,7 +18,7 @@ from circuit_gnn.optimal_bin_size import resolve_downsample
 from circuit_gnn.utils import plot_pdcm_matrix
 
 
-# The three arbitrary-network conditions (baseline + two modifications) come
+# The four arbitrary-network conditions (baseline + three modifications) come
 # from one SNNAP simulation pipeline and differ only in the dataset directory,
 # the synaptic conductances, and the ground-truth plot title.
 
@@ -27,8 +27,6 @@ _ARBITRARY_TIME_MAX_S   = 300    # limit to 300 s of simulation
 _ARBITRARY_THR_MV       = -10    # spike threshold, mV
 _ARBITRARY_REARM        = 8      # re-arm period in samples (8 samples × 1ms = ~7.5ms)
 _ARBITRARY_RASTER_MAX_S = 40     # show a readable window, not the full 300 s
-# fixed normalizer (not the per-dataset max) so the baseline and the two
-# modification conditions stay on one common scale
 _ARBITRARY_NORMALIZER   = 4.00
 
 
@@ -283,6 +281,60 @@ def load_arbitrary_modification2_network(downsample_factor = 'auto'):
     return _load_arbitrary_common(
         'arbitrary_modification2', edges,
         'True Connectivity (mod 2: N7->N2 created 0.00 -> 1.25)',
+        downsample_factor)
+
+
+def load_arbitrary_modification3_network(downsample_factor = 'auto'):
+    """
+    Load the arbitrary SNNAP network under modification 3: synaptic potentiation.
+
+    Exactly ONE edge changes; the other nine are untouched and serve as the null
+    distribution:
+
+      N6 -> N2   1.25 -> 3.125   potentiation (2.5x stronger)
+
+    The mirror of modification 1, which depressed an edge by the same 2.5x
+    factor. Two controls bracket it: N9 -> N2 is the matched control (same
+    postsynaptic cell, identical baseline weight of 1.25), so the learned ratio
+    A[N6,N2] / A[N9,N2] is ~1 at baseline and 2.5 here; and N6's other outputs
+    (N6 -> N1, N6 -> N3, N6 -> N5) are unchanged, so a cell-wide change in N6
+    can be told apart from a change at this one synapse.
+
+    Parameters
+    ----------
+    downsample_factor : int or 'auto'
+        Bin size in ms. 'auto' (default) picks it by heuristic (see
+        circuit_gnn.optimal_bin_size). Native resolution is 1 ms.
+
+    Returns
+    -------
+    binned_spikes : ndarray (11, n_timebins)
+        Spike counts per bin. Voltages thresholded at -10 mV with an 8-sample
+        refractory period; limited to first 300 s of simulation.
+    true_conn : ndarray (11, 11)
+        Signed synaptic weight matrix [pre, post].
+        Positive = excitatory, negative = inhibitory, 0 = no connection.
+    neuron_names : ndarray of int
+        Integer index 0–10 for each neuron.
+    """
+
+    # From SNNAP conductances; * marks the single edge changed from the baseline
+    edges = {
+        (0, 3):   0.75,   # N1 -> N4
+        (2, 9):   1.25,   # N3 -> N10
+        (3, 10):  0.70,   # N4 -> N11
+        (4, 9):   1.25,   # N5 -> N10
+        (5, 0):   0.50,   # N6 -> N1      within-cell control
+        (5, 1):   3.125,  # N6 -> N2   * was 1.25 (potentiation)
+        (5, 2):   0.50,   # N6 -> N3      within-cell control
+        (5, 4):  -4.00,   # N6 -> N5      within-cell control
+        (7, 1):  -4.00,   # N8 -> N2
+        (8, 1):   1.25,   # N9 -> N2      matched control
+    }
+
+    return _load_arbitrary_common(
+        'arbitrary_modification3', edges,
+        'True Connectivity (mod 3: N6->N2 potentiated 1.25 -> 3.125)',
         downsample_factor)
 
 
