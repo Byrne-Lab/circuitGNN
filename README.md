@@ -56,9 +56,7 @@ they rank connections within one recording but have no physical unit.
    training, so its cost grows with recording length and neuron count. Use a GPU
    (`device="cuda"`; picked automatically when available).
 3. **Ablation test.** A replicate is kept only if zeroing its connectivity raises its
-   validation loss by at least `ablation_threshold` (0.10), i.e. the graph matters to its
-   predictions. This is an absolute loss difference, so it depends on the data; if every
-   replicate fails, all are kept with a warning. Check `result.ablation`.
+   validation loss by at least `ablation_threshold` (0.10). This is an absolute loss difference, so it depends on the data; if every replicate fails, all are kept with a warning. Check `result.ablation`.
 4. **Consensus.** Each replicate is correct only up to a global sign, so replicates are
    aligned to one another and to a partial-correlation sign estimate (20 ms bins),
    averaged and rounded to 3 decimals (`round_decimals`). `A_consistent` keeps the edges
