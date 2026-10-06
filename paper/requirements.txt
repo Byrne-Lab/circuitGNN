@@ -1,0 +1,10 @@
+# Versions this code was last run with (Python 3.11). Install after `pip install -e ".[paper]"`.
+numpy==2.3.5
+scipy==1.16.3
+scikit-learn==1.7.2
+torch==2.9.1
+pandas==2.3.3
+matplotlib==3.10.6
+seaborn==0.13.2
+# sCCG, dSTTC, GLMCC and GLMPP baselines
+spycon @ git+https://github.com/christiando/spycon@9720cfa0a71ffd70a07c71c4e0e77a02baeba550

@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+title: "circuitGNN: inference of neural connectivity from spike trains"
+message: "If you use this software, please cite both the software and the paper."
+type: software
+authors:
+  - given-names: Archit
+    family-names: Gupta
+  - given-names: Curtis L.
+    family-names: Neveu
+  - given-names: John H.
+    family-names: Byrne
+license: MIT
+repository-code: "https://github.com/Byrne-Lab/circuitGNN"
+version: 0.1.0
+# TODO: add the Zenodo software DOI once the first release is archived.
+# doi: 10.5281/zenodo.XXXXXXX
+
+# TODO: replace with the published paper once it has a DOI.
+# preferred-citation:
+#   type: article
+#   title: ""
+#   authors: []
+#   journal: ""
+#   year: 2026
+#   doi: ""

@@ -1,18 +1,23 @@
-.vscode/
+# Python and tooling
 __pycache__/
-datasets/
-*.pyd
-*.so
-benchmarks/CoNNECT/modules/build/
-benchmarks/CoNNECT/modules/sources/crosscorrelogram.c
-*.csv
-results*
-figures/*.pdf
-figures/*.csv
-figures/pdcm
-figures/scaling
-figures/hiding
-figures/arb_exp
-figures/baselines
-figures/consistency
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# Editor
+.vscode/
+
+# Data and outputs, distributed separately from the code
+/datasets/
+/results/
+paper/figures/**/*.pdf
+paper/figures/**/*.csv
+
+# Third-party baselines (CoNNECT, CTM-DI), used from their own repositories
+paper/benchmarks/
+
+# Local only
+/archive/
 manuscript*

@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Optional, Callable, Dict, Any
 
 
 class SpikeEncoder(nn.Module):
@@ -96,18 +95,16 @@ class GNNLayer(nn.Module):
         self.b2 = nn.Parameter(torch.ones(1))
 
     def forward(self, x, A):
-        # x: (batch, num_neurons, in_dim)
-        neighbor_agg = torch.matmul(A, self.W_message(x)) # additive: sum_j(A_ij * message_j)
+        # x: (batch, num_neurons, in_dim); A: (num_neurons, num_neurons), A[i, j] = j -> i
         z = self.W_mod(x)
-        hadamard_agg = z * torch.matmul(A, z) # multiplicative: z_i (.) (A z)_i
-        self_term = self.W_self(x)
+        total = (self.b * self.W_self(x)                              # self
+                 + self.b1 * torch.matmul(A, self.W_message(x))       # additive: sum_j(A_ij * message_j)
+                 + self.b2 * (z * torch.matmul(A, z)))                # multiplicative: z_i (.) (A z)_i
 
-        out = self.relu(self.norm(
-            self.b * self_term + self.b1 * neighbor_agg + self.b2 * hadamard_agg
-        )) # combine and activate
+        out = self.relu(self.norm(total)) # combine and activate
 
         return out # (batch, num_neurons, out_dim)
-    
+
 class GraphNeuralNetwork(nn.Module):
     def __init__(
         self,
@@ -137,14 +134,14 @@ class GraphNeuralNetwork(nn.Module):
         self.fc_out = nn.Linear(hidden_dim, output_dim) # (batch, num_neurons, output_dim)
 
         self.A_scale = 1.0 # for ablation test
-    
-    def forward(self, embeddings):
-        A_exc= torch.relu(self.learned_adj_exc)
-        A_inh = torch.relu(self.learned_adj_inh)
-        A_signed = A_exc - A_inh
 
-        A = A_signed * (1 - torch.eye(A_signed.size(0), device=A_signed.device)) # zero the diagonal
-        A = A * self.A_scale
+    def signed_adjacency(self):
+        """Signed connectivity A = relu(exc) - relu(inh) with a zero diagonal; A[i, j] = j -> i."""
+        A_signed = torch.relu(self.learned_adj_exc) - torch.relu(self.learned_adj_inh)
+        return A_signed * (1 - torch.eye(A_signed.size(0), device=A_signed.device)) # zero the diagonal
+
+    def forward(self, embeddings):
+        A = self.signed_adjacency() * self.A_scale
 
         x = embeddings
         for layer in self.layers:
