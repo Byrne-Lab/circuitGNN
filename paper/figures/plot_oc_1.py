@@ -24,6 +24,10 @@ PANELS = [
     (DATA_DIR / 'baseline' / 'spycon_glmpp_default.npy', 'GLMPP Connectivity Matrix', 'glmpp.pdf', -3, 12),
     (DATA_DIR / 'baseline' / 'spycon_dsttc_delta_t30ms.npy', 'DSTTC Connectivity Matrix', 'dsttc.pdf', -0.1, 0.5),
     (DATA_DIR / 'baseline' / 'CTM_DI.npy', 'CTM-DI Connectivity Matrix', 'ctm_di.pdf', -0.1, 0.6),
+    (DATA_DIR / 'baseline' / 'CoNNECT.npy', 'CoNNECT Connectivity Matrix', 'connect.pdf', -0.1, 1.6),
+    (DATA_DIR / 'baseline' / 'spycon_glmcc_syn_delay5ms_beta500_tau4ms-4ms.npy', 'GLMCC Connectivity Matrix', 'glmcc.pdf', -1, 4),
+    (DATA_DIR / 'baseline' / 'spycon_sccg_alpha0.05.npy', 'SCCG Connectivity Matrix', 'sccg.pdf', -0.05, 0.05),
+
 ]
 
 CBAR_LABEL = 'Connection strength'

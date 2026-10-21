@@ -26,11 +26,11 @@ OUT_DIR = FIGURES_DIR / 'pdcm'
 MATRICES = [
     (RESULTS_DIR / 'pdcm' / 'mean_consistent.npy', 'GNN Connectivity Matrix', 'gnn.pdf', -0.010, 0.005),
     (DATA_DIR / 'baseline' / 'spycon_glmpp_default.npy', 'GLMPP Connectivity Matrix', 'glmpp.pdf', -2, 6),
-    (DATA_DIR / 'baseline' / 'spycon_glmcc_syn_delay1ms_beta4000_tau4ms-4ms.npy',
-     'GLMCC Connectivity Matrix', 'glmcc.pdf', -0.1, 0.4),
+    (DATA_DIR / 'baseline' / 'spycon_glmcc_syn_delay1ms_beta4000_tau4ms-4ms.npy', 'GLMCC Connectivity Matrix', 'glmcc.pdf', -0.1, 0.4),
     (DATA_DIR / 'baseline' / 'spycon_dsttc_delta_t30ms.npy', 'DSTTC Connectivity Matrix', 'dsttc.pdf', -0.1, 0.4),
     (DATA_DIR / 'baseline' / 'spycon_sccg_binsize2ms_hf0.8.npy', 'SCCG Connectivity Matrix', 'sccg.pdf', -0.1, 0.3),
     (DATA_DIR / 'baseline' / 'CTM_DI.npy', 'CTM-DI Connectivity Matrix', 'ctm_di.pdf', -0.025, 0.1),
+    (DATA_DIR / 'baseline' / 'CoNNECT.npy', 'Connect Connectivity Matrix', 'connect.pdf', -0.025, 0.1),
 ]
 
 
