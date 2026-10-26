@@ -12,8 +12,8 @@ pip install -e ".[paper]"
 pip install -r paper/requirements.txt    # exact versions used, incl. spycon for the baselines
 ```
 
-Download the data archive and place its `datasets/` and `results/` folders at the
-repository root. `results/` holds the trained replicates, so every evaluation and figure
+Download the data archive from Zenodo (https://doi.org/10.5281/zenodo.23674725) and place
+its `datasets/` and `results/` folders at the repository root. `results/` holds the trained replicates, so every evaluation and figure
 below runs without retraining. Expected layout:
 
 ```
