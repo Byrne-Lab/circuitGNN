@@ -1,11 +1,19 @@
-# CircuitGNN
+<p align="center">
+  <img src="assets/logo.svg" alt="CircuitGNN" width="360">
+</p>
+
+<h3 align="center">Graph neural network approach for inferring neuronal connectivity</h3>
 
 [![CI](https://github.com/Byrne-Lab/circuitGNN/actions/workflows/ci.yml/badge.svg)](https://github.com/Byrne-Lab/circuitGNN/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Inference of effective neuronal connectivity from neuronal spike activity using a graph structure learning approach and graph neural networks.
 
-This repository holds the `circuit_gnn` Python package and the code that reproduces the accompanying manuscript ([`paper/`](paper/README.md)).
+This repository contains the `circuit_gnn` Python package and the code to reproduce the accompanying manuscript ([`paper/`](paper/README.md)).
+
+<p align="center">
+  <img src="assets/Pipeline.png" alt="Overview of the CircuitGNN pipeline" width="900">
+</p>
 
 ## Install
 
@@ -39,6 +47,10 @@ print(f"Signed F1={res.signed_f1:.3f}  NIE={res.nie:.3f}  AUROC={res.auroc:.3f}"
 
 `A_consistent[i, j]` is the connection from neuron `i` (presynaptic) to neuron `j`
 (postsynaptic): positive is excitatory, negative inhibitory, 0 none. Weights are in arbitrary units.
+
+<p align="center">
+  <img src="assets/Example_1.png" alt="Spike raster, true connectivity and inferred connectivity for an 11-neuron example" width="900">
+</p>
 
 | `result.` | |
 |---|---|
