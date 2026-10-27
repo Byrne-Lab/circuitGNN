@@ -70,10 +70,6 @@ sweeps are cut from 2000 s simulations.
 | 7A | `python -m paper.experiments.scaling` | `paper/figures/scaling/`, `paper/figures/metrics_scaling.csv` |
 | 7B–C | `python -m paper.experiments.hiding` | `paper/figures/hiding/`, `paper/figures/metrics_hiding.csv` |
 
-The figure scripts read the consensus written by step 2; `scaling` and `hiding` compute
-it themselves. 4D and 6D need the baseline scores below. Fig. 5 reads the raw voltage
-traces of the default and ablated *Aplysia* simulations, not the consensus.
-
 ## Baselines
 
 sCCG, dSTTC, GLMCC and GLMPP run through [spycon](https://github.com/christiando/spycon)
